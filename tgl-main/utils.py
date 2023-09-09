@@ -8,15 +8,19 @@ import numpy as np
 
 def load_feat(d, rand_de=0, rand_dn=0):
     node_feats = None
-    if os.path.exists('DATA/{}/node_features.pt'.format(d)):
-        node_feats = torch.load('DATA/{}/node_features.pt'.format(d))
+    if os.path.exists('/home/qcsun/DistTGL/data/{}/node_features.pt'.format(d)):
+        node_feats = torch.load('/home/qcsun/DistTGL/data/{}/node_features.pt'.format(d))
         if node_feats.dtype == torch.bool:
             node_feats = node_feats.type(torch.float32)
     edge_feats = None
-    if os.path.exists('DATA/{}/edge_features.pt'.format(d)):
-        edge_feats = torch.load('DATA/{}/edge_features.pt'.format(d))
-        if edge_feats.dtype == torch.bool:
-            edge_feats = edge_feats.type(torch.float32)
+    if os.path.exists('/home/qcsun/DistTGL/data/{}/edge_features.pt'.format(d)):
+        edge_feats = torch.load('/home/qcsun/DistTGL/data/{}/edge_features.pt'.format(d))
+        print("edge_feats.dtype111: ", edge_feats.dtype)
+        print(edge_feats.shape)
+        # if edge_feats.dtype == torch.bool:
+        #     edge_feats = edge_feats.type(torch.float32)
+        #     # edge_feats = edge_feats.to(torch.float32)
+        #     edge_feats = edge_feats.numpy()
     if rand_de > 0:
         if d == 'LASTFM':
             edge_feats = torch.randn(1293103, rand_de)
@@ -26,12 +30,12 @@ def load_feat(d, rand_de=0, rand_dn=0):
         if d == 'LASTFM':
             node_feats = torch.randn(1980, rand_dn)
         elif d == 'MOOC':
-            edge_feats = torch.randn(7144, rand_dn)
+            node_feats = torch.randn(7144, rand_dn)
     return node_feats, edge_feats
 
 def load_graph(d):
-    df = pd.read_csv('DATA/{}/edges.csv'.format(d))
-    g = np.load('DATA/{}/ext_full.npz'.format(d))
+    df = pd.read_csv('/home/qcsun/DistTGL/data/{}/edges.csv'.format(d))
+    g = np.load('/home/qcsun/DistTGL/data/{}/ext_full.npz'.format(d))
     return g, df
 
 def parse_config(f):
@@ -82,6 +86,8 @@ def mfgs_to_cuda(mfgs):
     return mfgs
 
 def prepare_input(mfgs, node_feats, edge_feats, combine_first=False, pinned=False, nfeat_buffs=None, efeat_buffs=None, nids=None, eids=None):
+    # 注意下面这一行后面要删掉
+    pinned = False
     if combine_first:
         for i in range(len(mfgs[0])):
             if mfgs[0][i].num_src_nodes() > mfgs[0][i].num_dst_nodes():
@@ -125,11 +131,19 @@ def prepare_input(mfgs, node_feats, edge_feats, combine_first=False, pinned=Fals
                             idx = eids[i]
                         else:
                             idx = b.edata['ID'].cpu().long()
+
                         torch.index_select(edge_feats, 0, idx, out=efeat_buffs[i][:idx.shape[0]])
                         b.edata['f'] = efeat_buffs[i][:idx.shape[0]].cuda(non_blocking=True)
                         i += 1
                     else:
-                        srch = edge_feats[b.edata['ID'].long()].float()
+                        device = torch.device('cpu')
+                        srch = edge_feats[b.edata['ID'].long().to(device)]
+                        # srch = edge_feats[b.edata['ID'].long().to(device)].float()
+                        # print(srch[0])
+                        # print(srch.dtype)
+                        srch = srch.type(torch.float32)
+                        # print(srch[0])
+                        # print(srch.dtype)
                         b.edata['f'] = srch.cuda()
     return mfgs
 

@@ -28,7 +28,7 @@ class TemporalGraphBlock
         // 这个nodes感觉是存了从一开始的根节点到当前层经过的所有节点（和快照无关）
         std::vector<NodeIDType> nodes;
         // 该层该快照采样期间总共有多少节点（重复节点也会额外加上），该层该快照采样期间的根节点数（这里的根节点=从一开始的根节点到上一层经过的所有节点）
-        NodeIDType dim_in, dim_out;
+        NodeIDType dim_in, dim_out; // num_dst_nodes, num_src_nodes
         // 存的是总共ptr更新的时间，用于测试
         double ptr_time = 0;
         // 存的是第0个线程的查找s_search和e_search时间，用于测试

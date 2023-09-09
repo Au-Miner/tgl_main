@@ -24,7 +24,7 @@ gnn:
     dim_out: 100
 train:
   - epoch: 100
-    batch_size: 600
+    batch_size: 600 # 4000
     # reorder: 16
     lr: 0.0001
     dropout: 0.2

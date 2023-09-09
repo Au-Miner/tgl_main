@@ -14,6 +14,11 @@ parser.add_argument('--model', type=str, default='', help='name of stored model 
 parser.add_argument('--posneg', default=False, action='store_true', help='for positive negative detection, whether to sample negative nodes')
 args=parser.parse_args()
 
+'''
+python train_node.py --data WIKI --config /home/qcsun/tgl-main/config/TGN.yml --model /home/qcsun/wql_tgl/tgl-main/models/WIKI_TGN.pkl
+
+'''
+
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 if args.data == 'WIKI' or args.data == 'REDDIT':
     args.posneg = True
@@ -30,13 +35,14 @@ from utils import *
 from tqdm import tqdm
 from sklearn.metrics import average_precision_score, f1_score
 
-ldf = pd.read_csv('DATA/{}/labels.csv'.format(args.data))
+ldf = pd.read_csv('/home/qcsun/DistTGL/data/{}/labels.csv'.format(args.data))
 role = ldf['ext_roll'].values
 # train_node_end = ldf[ldf['ext_roll'].gt(0)].index[0]
 # val_node_end = ldf[ldf['ext_roll'].gt(1)].index[0]
 labels = ldf['label'].values.astype(np.int64)
 
-emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
+# emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
+emb_file_name = 'WIKI_TGN1.pt'
 if not os.path.isdir('embs'):
     os.mkdir('embs')
 
@@ -114,7 +120,10 @@ if not os.path.isfile('embs/' + emb_file_name):
                     if memory_param['deliver_to'] == 'neighbors':
                         block = to_dgl_blocks(ret, sample_param['history'], reverse=True)[0][0]
                     mailbox.update_mailbox(model.memory_updater.last_updated_nid, model.memory_updater.last_updated_memory, root_nodes, ts, mem_edge_feats, block)
-                    mailbox.update_memory(model.memory_updater.last_updated_nid, model.memory_updater.last_updated_memory, model.memory_updater.last_updated_ts)
+                    mailbox.update_memory(model.memory_updater.last_updated_nid,
+                                          model.memory_updater.last_updated_memory,
+                                          root_nodes,
+                                          model.memory_updater.last_updated_ts)
             processed_edge_id += train_param['batch_size']
             if processed_edge_id >= len(df):
                 return

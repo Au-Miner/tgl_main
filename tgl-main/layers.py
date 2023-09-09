@@ -82,6 +82,7 @@ class TransfomerAttentionLayer(torch.nn.Module):
             K = torch.zeros((b.num_edges(), self.dim_out), device=torch.device('cuda:0'))
             V = torch.zeros((b.num_edges(), self.dim_out), device=torch.device('cuda:0'))
             if self.dim_node_feat > 0:
+                # 这里的srcdata['h']第0层是memory_updater（TransformerMemoryUpdater）时获取的，后面层则是当前执行结果rst
                 Q += self.w_q_n(b.srcdata['h'][:b.num_dst_nodes()])[b.edges()[1]]
                 K += self.w_k_n(b.srcdata['h'][b.num_dst_nodes():])[b.edges()[0] - b.num_dst_nodes()]
                 V += self.w_v_n(b.srcdata['h'][b.num_dst_nodes():])[b.edges()[0] - b.num_dst_nodes()]

@@ -6,16 +6,16 @@ import os
 在计算节点中，则通过 scatter_object_list 和 gather_object 等函数接收主进程发来的数据和模型，并对这些数据进行处理并返回评估结果。
 整个分布式训练过程中，主进程和计算节点之间通过 MPI 协议进行通信，以完成数据和模型的传输和同步。
 '''
-parser=argparse.ArgumentParser()
+parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='dataset name')
 parser.add_argument('--config', type=str, help='path to config file')
 parser.add_argument('--seed', type=int, default=0, help='random seed to use')
 parser.add_argument('--num_gpus', type=int, default=4, help='number of gpus to use')
-parser.add_argument('--model',  type=str, help='path to model file')
-parser.add_argument('--batch_size',  type=int, default=4000, help='batch size to generate node embeddings')
+parser.add_argument('--model', type=str, help='path to model file')
+parser.add_argument('--batch_size', type=int, default=4000, help='batch size to generate node embeddings')
 parser.add_argument('--omp_num_threads', type=int, default=16)
 parser.add_argument("--local_rank", type=int, default=-1)
-args=parser.parse_args()
+args = parser.parse_args()
 
 # set which GPU to use
 # 使用指定的GPU组 在一机器多卡的机器中,我们可以指定使用某几台GPU,而剩下的GPU在程序中不会被使用
@@ -39,18 +39,20 @@ from modules import *
 from sampler import *
 from utils import *
 
+
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+
 set_seed(args.seed)
 torch.distributed.init_process_group(backend='gloo')
 nccl_group = torch.distributed.new_group(ranks=list(range(args.num_gpus)), backend='nccl')
 
 if args.local_rank == 0:
-    # 从'DATA/{}/node_features.pt'中加载点特征
+    # 从'/home/qcsun/DistTGL/data/{}/node_features.pt'中加载点特征
     _node_feats, _edge_feats = load_feat(args.data)
 dim_feats = [0, 0, 0, 0, 0, 0]
 if args.local_rank == 0:
@@ -70,16 +72,16 @@ if args.local_rank == 0:
         edge_feats = create_shared_mem_array('edge_feats', _edge_feats.shape, dtype=_edge_feats.dtype)
         edge_feats.copy_(_edge_feats)
         del _edge_feats
-    else: 
+    else:
         edge_feats = None
 torch.distributed.barrier()
 torch.distributed.broadcast_object_list(dim_feats, src=0)
 if args.local_rank > 0 and args.local_rank < args.num_gpus:
     node_feats = None
     edge_feats = None
-    if os.path.exists('DATA/{}/node_features.pt'.format(args.data)):
+    if os.path.exists('/home/qcsun/DistTGL/data/{}/node_features.pt'.format(args.data)):
         node_feats = get_shared_mem_array('node_feats', (dim_feats[0], dim_feats[1]), dtype=dim_feats[2])
-    if os.path.exists('DATA/{}/edge_features.pt'.format(args.data)):
+    if os.path.exists('/home/qcsun/DistTGL/data/{}/edge_features.pt'.format(args.data)):
         edge_feats = get_shared_mem_array('edge_feats', (dim_feats[3], dim_feats[4]), dtype=dim_feats[5])
 # 通过config地址来获取具体变量的参数
 sample_param, memory_param, gnn_param, train_param = parse_config(args.config)
@@ -99,10 +101,13 @@ num_nodes = num_nodes[0]
 mailbox = None
 if memory_param['type'] != 'none':
     if args.local_rank == 0:
-        node_memory = create_shared_mem_array('node_memory', torch.Size([num_nodes, memory_param['dim_out']]), dtype=torch.float32)
+        node_memory = create_shared_mem_array('node_memory', torch.Size([num_nodes, memory_param['dim_out']]),
+                                              dtype=torch.float32)
         node_memory_ts = create_shared_mem_array('node_memory_ts', torch.Size([num_nodes]), dtype=torch.float32)
-        mails = create_shared_mem_array('mails', torch.Size([num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]]), dtype=torch.float32)
-        mail_ts = create_shared_mem_array('mail_ts', torch.Size([num_nodes, memory_param['mailbox_size']]), dtype=torch.float32)
+        mails = create_shared_mem_array('mails', torch.Size(
+            [num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]]), dtype=torch.float32)
+        mail_ts = create_shared_mem_array('mail_ts', torch.Size([num_nodes, memory_param['mailbox_size']]),
+                                          dtype=torch.float32)
         next_mail_pos = create_shared_mem_array('next_mail_pos', torch.Size([num_nodes]), dtype=torch.long)
         update_mail_pos = create_shared_mem_array('update_mail_pos', torch.Size([num_nodes]), dtype=torch.int32)
         # 执行完缓存任务后，也阻塞掉
@@ -118,19 +123,24 @@ if memory_param['type'] != 'none':
         # 当前进程如果不是主进程，就让pytorch对它进行阻塞，也就是暂停运行
         torch.distributed.barrier()
         # 当主进程分享完信息后，其他进程获取分享的信息
-        node_memory = get_shared_mem_array('node_memory', torch.Size([num_nodes, memory_param['dim_out']]), dtype=torch.float32)
+        node_memory = get_shared_mem_array('node_memory', torch.Size([num_nodes, memory_param['dim_out']]),
+                                           dtype=torch.float32)
         node_memory_ts = get_shared_mem_array('node_memory_ts', torch.Size([num_nodes]), dtype=torch.float32)
-        mails = get_shared_mem_array('mails', torch.Size([num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]]), dtype=torch.float32)
-        mail_ts = get_shared_mem_array('mail_ts', torch.Size([num_nodes, memory_param['mailbox_size']]), dtype=torch.float32)
+        mails = get_shared_mem_array('mails', torch.Size(
+            [num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]]), dtype=torch.float32)
+        mail_ts = get_shared_mem_array('mail_ts', torch.Size([num_nodes, memory_param['mailbox_size']]),
+                                       dtype=torch.float32)
         next_mail_pos = get_shared_mem_array('next_mail_pos', torch.Size([num_nodes]), dtype=torch.long)
         update_mail_pos = get_shared_mem_array('update_mail_pos', torch.Size([num_nodes]), dtype=torch.int32)
-    mailbox = MailBox(memory_param, num_nodes, dim_feats[4], node_memory, node_memory_ts, mails, mail_ts, next_mail_pos, update_mail_pos)
+    mailbox = MailBox(memory_param, num_nodes, dim_feats[4], node_memory, node_memory_ts, mails, mail_ts, next_mail_pos,
+                      update_mail_pos)
 
 # 非主进程
 if args.local_rank < args.num_gpus:
     # GPU worker process
     model = GeneralModel(dim_feats[1], dim_feats[4], sample_param, memory_param, gnn_param, train_param).cuda()
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], process_group=nccl_group, output_device=args.local_rank)
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], process_group=nccl_group,
+                                                      output_device=args.local_rank)
     model.load_state_dict(torch.load(path_saver, map_location=torch.device('cuda:0')))
     creterion = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=train_param['lr'])
@@ -188,8 +198,12 @@ if args.local_rank < args.num_gpus:
                         multi_block = [None] * (args.num_gpus + 1)
                         torch.distributed.scatter_object_list(my_block, multi_block, src=args.num_gpus)
                         block = my_block[0]
-                    mailbox.update_mailbox(model.module.memory_updater.last_updated_nid, model.module.memory_updater.last_updated_memory, root_nodes, ts, mem_edge_feats, block)
-                    mailbox.update_memory(model.module.memory_updater.last_updated_nid, model.module.memory_updater.last_updated_memory, model.module.memory_updater.last_updated_ts)
+                    mailbox.update_mailbox(model.module.memory_updater.last_updated_nid,
+                                           model.module.memory_updater.last_updated_memory, root_nodes, ts,
+                                           mem_edge_feats, block)
+                    mailbox.update_memory(model.module.memory_updater.last_updated_nid,
+                                          model.module.memory_updater.last_updated_memory,
+                                          model.module.memory_updater.last_updated_ts)
                     if memory_param['deliver_to'] == 'neighbors':
                         torch.distributed.barrier(group=nccl_group)
                         if args.local_rank == 0:
@@ -222,8 +236,12 @@ if args.local_rank < args.num_gpus:
                         multi_block = [None] * (args.num_gpus + 1)
                         torch.distributed.scatter_object_list(my_block, multi_block, src=args.num_gpus)
                         block = my_block[0]
-                    mailbox.update_mailbox(model.module.memory_updater.last_updated_nid, model.module.memory_updater.last_updated_memory, root_nodes, ts, mem_edge_feats, block)
-                    mailbox.update_memory(model.module.memory_updater.last_updated_nid, model.module.memory_updater.last_updated_memory, model.module.memory_updater.last_updated_ts)
+                    mailbox.update_mailbox(model.module.memory_updater.last_updated_nid,
+                                           model.module.memory_updater.last_updated_memory, root_nodes, ts,
+                                           mem_edge_feats, block)
+                    mailbox.update_memory(model.module.memory_updater.last_updated_nid,
+                                          model.module.memory_updater.last_updated_memory,
+                                          model.module.memory_updater.last_updated_ts)
                     if memory_param['deliver_to'] == 'neighbors':
                         torch.distributed.barrier(group=nccl_group)
                         if args.local_rank == 0:
@@ -250,15 +268,18 @@ else:
     if not ('no_sample' in sample_param and sample_param['no_sample']):
         sampler = ParallelSampler(g['indptr'], g['indices'], g['eid'], g['ts'].astype(np.float32),
                                   sample_param['num_thread'], 1, sample_param['layer'], sample_param['neighbor'],
-                                  sample_param['strategy']=='recent', sample_param['prop_time'],
+                                  sample_param['strategy'] == 'recent', sample_param['prop_time'],
                                   sample_param['history'], float(sample_param['duration']))
     neg_link_sampler = NegLinkSampler(g['indptr'].shape[0] - 1)
 
-    ldf = pd.read_csv('DATA/{}/labels.csv'.format(args.data))
+    ldf = pd.read_csv('/home/qcsun/DistTGL/data/{}/labels.csv'.format(args.data))
     args.batch_size = math.ceil(len(ldf) / (len(ldf) // args.batch_size // args.num_gpus * args.num_gpus))
-    train_param['batch_size'] = math.ceil(len(df) / (len(df) // train_param['batch_size'] // args.num_gpus * args.num_gpus))
+    train_param['batch_size'] = math.ceil(
+        len(df) / (len(df) // train_param['batch_size'] // args.num_gpus * args.num_gpus))
 
     processed_edge_id = 0
+
+
     def forward_model_to(time):
         global processed_edge_id
         if processed_edge_id >= len(df):
@@ -276,7 +297,8 @@ else:
                 # 从 df 中取出一定数量的数据，并将其转换为包含源节点、目的节点和时间戳的三元组
                 rows = df[processed_edge_id:min(len(df), processed_edge_id + train_param['batch_size'])]
                 # 根据源节点、目的节点和负样本采样器生成节点 ID，并将这些节点 ID 存储到 numpy 数组中
-                root_nodes = np.concatenate([rows.src.values, rows.dst.values, neg_link_sampler.sample(len(rows))]).astype(np.int32)
+                root_nodes = np.concatenate(
+                    [rows.src.values, rows.dst.values, neg_link_sampler.sample(len(rows))]).astype(np.int32)
                 ts = np.concatenate([rows.time.values, rows.time.values, rows.time.values]).astype(np.float32)
                 # 如果存在采样器，使用采样器对节点 ID 进行采样，并获取采样结果
                 if sampler is not None:
@@ -331,6 +353,7 @@ else:
             if processed_edge_id >= len(df):
                 break
 
+
     embs = list()
     multi_mfgs = list()
     for _, rows in tqdm(ldf.groupby(ldf.index // args.batch_size)):
@@ -359,8 +382,9 @@ else:
             torch.distributed.gather_object(None, multi_embs, dst=args.num_gpus)
             embs += multi_embs[:-1]
             multi_mfgs = list()
-        
-    emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
+
+    emb_file_name = hashlib.md5(
+        str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
     if not os.path.isdir('embs'):
         os.mkdir('embs')
     embs = torch.cat(embs, dim=0)

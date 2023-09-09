@@ -49,25 +49,31 @@ class MailBox():
             self.pinned_mailbox_buffs.append(torch.zeros((limit, self.mailbox.shape[1], self.mailbox.shape[2]), pin_memory=True))
             self.pinned_mailbox_ts_buffs.append(torch.zeros((limit, self.mailbox_ts.shape[1]), pin_memory=True))
 
-    # 准备输入邮件
+    # 初始化mailbox
     def prep_input_mails(self, mfg, use_pinned_buffers=False):
         for i, b in enumerate(mfg):
-            if use_pinned_buffers:
-                dst_idx = idx[:b.num_dst_nodes()]
-                torch.index_select(self.node_memory, 0, idx, out=self.pinned_node_memory_buffs[i][:idx.shape[0]])
-                b.srcdata['mem'] = self.pinned_node_memory_buffs[i][:idx.shape[0]].cuda(non_blocking=True)
-                torch.index_select(self.node_memory_ts,0, idx, out=self.pinned_node_memory_ts_buffs[i][:idx.shape[0]])
-                b.srcdata['mem_ts'] = self.pinned_node_memory_ts_buffs[i][:idx.shape[0]].cuda(non_blocking=True)
-                torch.index_select(self.mailbox, 0, idx, out=self.pinned_mailbox_buffs[i][:idx.shape[0]])
-                b.srcdata['mem_input'] = self.pinned_mailbox_buffs[i][:idx.shape[0]].reshape(b.srcdata['ID'].shape[0], -1).cuda(non_blocking=True)
-                torch.index_select(self.mailbox_ts, 0, idx, out=self.pinned_mailbox_ts_buffs[i][:idx.shape[0]])
-                b.srcdata['mail_ts'] = self.pinned_mailbox_ts_buffs[i][:idx.shape[0]].cuda(non_blocking=True)
-            else:
-                b.srcdata['mem'] = self.node_memory[b.srcdata['ID'].long()].cuda()
-                b.srcdata['mem_ts'] = self.node_memory_ts[b.srcdata['ID'].long()].cuda()
-                b.srcdata['mem_input'] = self.mailbox[b.srcdata['ID'].long()].cuda().reshape(b.srcdata['ID'].shape[0], -1)
-                b.srcdata['mail_ts'] = self.mailbox_ts[b.srcdata['ID'].long()].cuda()
+            # 注意下面的所有注释后面要删掉
+            # if use_pinned_buffers:
+            #     dst_idx = idx[:b.num_dst_nodes()]
+            #     torch.index_select(self.node_memory, 0, idx, out=self.pinned_node_memory_buffs[i][:idx.shape[0]])
+            #     b.srcdata['mem'] = self.pinned_node_memory_buffs[i][:idx.shape[0]].cuda(non_blocking=True)
+            #     torch.index_select(self.node_memory_ts,0, idx, out=self.pinned_node_memory_ts_buffs[i][:idx.shape[0]])
+            #     b.srcdata['mem_ts'] = self.pinned_node_memory_ts_buffs[i][:idx.shape[0]].cuda(non_blocking=True)
+            #     torch.index_select(self.mailbox, 0, idx, out=self.pinned_mailbox_buffs[i][:idx.shape[0]])
+            #     b.srcdata['mem_input'] = self.pinned_mailbox_buffs[i][:idx.shape[0]].reshape(b.srcdata['ID'].shape[0], -1).cuda(non_blocking=True)
+            #     torch.index_select(self.mailbox_ts, 0, idx, out=self.pinned_mailbox_ts_buffs[i][:idx.shape[0]])
+            #     b.srcdata['mail_ts'] = self.pinned_mailbox_ts_buffs[i][:idx.shape[0]].cuda(non_blocking=True)
+            # else:
+            # print("self.node_moemry: ", self.node_memory)
+            # print("b.srcdata: ", b.srcdata)
+            # print("self.node_moemry.shape: ", self.node_memory.shape)
+            device = torch.device('cpu')
+            b.srcdata['mem'] = self.node_memory[b.srcdata['ID'].long().to(device)].cuda()
+            b.srcdata['mem_ts'] = self.node_memory_ts[b.srcdata['ID'].long().to(device)].cuda()
+            b.srcdata['mem_input'] = self.mailbox[b.srcdata['ID'].long().to(device)].cuda().reshape(b.srcdata['ID'].shape[0], -1)
+            b.srcdata['mail_ts'] = self.mailbox_ts[b.srcdata['ID'].long().to(device)].cuda()
 
+    # 更新memory，每个节点直接覆盖最新memory
     def update_memory(self, nid, memory, root_nodes, ts, neg_samples=1):
         if nid is None:
             return
@@ -79,6 +85,7 @@ class MailBox():
             self.node_memory[nid.long()] = memory
             self.node_memory_ts[nid.long()] = ts
 
+    # 更新mailbox
     def update_mailbox(self, nid, memory, root_nodes, ts, edge_feats, block, neg_samples=1):
         with torch.no_grad():
             num_true_edges = root_nodes.shape[0] // (neg_samples + 2)
@@ -89,8 +96,10 @@ class MailBox():
                 block = block.to(self.device)
             # TGN/JODIE
             if self.memory_param['deliver_to'] == 'self':
+                # 获取目标节点的id
                 src = torch.from_numpy(root_nodes[:num_true_edges]).to(self.device)
                 dst = torch.from_numpy(root_nodes[num_true_edges:num_true_edges * 2]).to(self.device)
+                # 获取这些目标节点的h
                 mem_src = memory[:num_true_edges]
                 mem_dst = memory[num_true_edges:num_true_edges * 2]
                 if self.dim_edge_feat > 0:
@@ -235,6 +244,7 @@ class RNNMemeoryUpdater(torch.nn.Module):
                 else:
                     b.srcdata['h'] = updated_memory
 
+# 对应着TGN的Temporal Graph Attention部分
 class TransformerMemoryUpdater(torch.nn.Module):
 
     def __init__(self, memory_param, dim_in, dim_out, dim_time, train_param):
@@ -276,6 +286,8 @@ class TransformerMemoryUpdater(torch.nn.Module):
             rst = self.dropout(rst)
             rst = torch.nn.functional.relu(rst)
             b.srcdata['h'] = rst
+            # 这里的last_updated_nid是采样的所有节点
+            # last_updated_memory是h^l_i(t)
             self.last_updated_memory = rst.detach().clone()
             self.last_updated_nid = b.srcdata['ID'].detach().clone()
             self.last_updated_ts = b.srcdata['ts'].detach().clone()

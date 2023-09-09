@@ -27,6 +27,7 @@ class GeneralModel(torch.nn.Module):
                 raise NotImplementedError
             self.dim_node_input = memory_param['dim_out']
         self.layers = torch.nn.ModuleDict()
+        # 将layers保存为gnn_param['layer']*sample_param['history']个TransfomerAttentionLayer层
         if gnn_param['arch'] == 'transformer_attention':
             for h in range(sample_param['history']):
                 self.layers['l0h' + str(h)] = TransfomerAttentionLayer(self.dim_node_input, dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], combined=combined)
@@ -46,14 +47,17 @@ class GeneralModel(torch.nn.Module):
             self.combiner = torch.nn.RNN(gnn_param['dim_out'], gnn_param['dim_out'])
     
     def forward(self, mfgs, neg_samples=1):
+        # 先更新第0层的srcdata['h']
         if self.memory_param['type'] == 'node':
             self.memory_updater(mfgs[0])
         out = list()
         for l in range(self.gnn_param['layer']):
             for h in range(self.sample_param['history']):
+                # 对第[l,h]层layer传入mfgs[l][h]进行训练
                 rst = self.layers['l' + str(l) + 'h' + str(h)](mfgs[l][h])
                 if 'time_transform' in self.gnn_param and self.gnn_param['time_transform'] == 'JODIE':
                     rst = self.layers['l0h' + str(h) + 't'](rst, mfgs[l][h].srcdata['mem_ts'], mfgs[l][h].srcdata['ts'])
+                # 更新后面一层的srcdata['h']的状态
                 if l != self.gnn_param['layer'] - 1:
                     mfgs[l + 1][h].srcdata['h'] = rst
                 else:

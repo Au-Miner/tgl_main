@@ -3,7 +3,7 @@ from setuptools import setup
 from pybind11.setup_helpers import Pybind11Extension
 
 ext_modules = [
-    Pybind11Extension("sampler_core", 
+    Pybind11Extension("Ïsampler_core",
                       ['sampler_core.cpp'],
                       extra_compile_args = ['-fopenmp'],
                       extra_link_args = ['-fopenmp'],),

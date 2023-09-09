@@ -1,15 +1,14 @@
 import argparse
 import os
 
-parser=argparse.ArgumentParser()
+parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='dataset name')
 parser.add_argument('--config', type=str, help='path to config file')
 parser.add_argument('--seed', type=int, default=0, help='random seed to use')
 parser.add_argument('--num_gpus', type=int, default=4, help='number of gpus to use')
 parser.add_argument('--omp_num_threads', type=int, default=8)
 parser.add_argument("--local_rank", type=int, default=-1)
-args=parser.parse_args()
-
+args = parser.parse_args()
 
 # set which GPU to use
 if args.local_rank < args.num_gpus:
@@ -33,11 +32,13 @@ from modules import *
 from sampler import *
 from utils import *
 
+
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
 
 set_seed(args.seed)
 torch.distributed.init_process_group(backend='gloo', timeout=datetime.timedelta(0, 3600))
@@ -45,7 +46,7 @@ nccl_group = torch.distributed.new_group(ranks=list(range(args.num_gpus)), backe
 
 # local_rank范围从[0, num_gpus]，其中num_gpus为cpu执行
 if args.local_rank == 0:
-    # 从'DATA/{}/node_features.pt'中加载点特征
+    # 从'/home/qcsun/DistTGL/data/{}/node_features.pt'中加载点特征
     _node_feats, _edge_feats = load_feat(args.data)
 dim_feats = [0, 0, 0, 0, 0, 0]
 # 对于第0个GPU创建共享变量
@@ -68,16 +69,16 @@ if args.local_rank == 0:
         edge_feats = create_shared_mem_array('edge_feats', _edge_feats.shape, dtype=_edge_feats.dtype)
         edge_feats.copy_(_edge_feats)
         del _edge_feats
-    else: 
+    else:
         edge_feats = None
 torch.distributed.barrier()
 torch.distributed.broadcast_object_list(dim_feats, src=0)
 if args.local_rank > 0 and args.local_rank < args.num_gpus:
     node_feats = None
     edge_feats = None
-    if os.path.exists('DATA/{}/node_features.pt'.format(args.data)):
+    if os.path.exists('/home/qcsun/DistTGL/data/{}/node_features.pt'.format(args.data)):
         node_feats = get_shared_mem_array('node_feats', (dim_feats[0], dim_feats[1]), dtype=dim_feats[2])
-    if os.path.exists('DATA/{}/edge_features.pt'.format(args.data)):
+    if os.path.exists('/home/qcsun/DistTGL/data/{}/edge_features.pt'.format(args.data)):
         edge_feats = get_shared_mem_array('edge_feats', (dim_feats[3], dim_feats[4]), dtype=dim_feats[5])
 sample_param, memory_param, gnn_param, train_param = parse_config(args.config)
 orig_batch_size = train_param['batch_size']
@@ -102,10 +103,13 @@ num_nodes = num_nodes[0]
 mailbox = None
 if memory_param['type'] != 'none':
     if args.local_rank == 0:
-        node_memory = create_shared_mem_array('node_memory', torch.Size([num_nodes, memory_param['dim_out']]), dtype=torch.float32)
+        node_memory = create_shared_mem_array('node_memory', torch.Size([num_nodes, memory_param['dim_out']]),
+                                              dtype=torch.float32)
         node_memory_ts = create_shared_mem_array('node_memory_ts', torch.Size([num_nodes]), dtype=torch.float32)
-        mails = create_shared_mem_array('mails', torch.Size([num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]]), dtype=torch.float32)
-        mail_ts = create_shared_mem_array('mail_ts', torch.Size([num_nodes, memory_param['mailbox_size']]), dtype=torch.float32)
+        mails = create_shared_mem_array('mails', torch.Size(
+            [num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]]), dtype=torch.float32)
+        mail_ts = create_shared_mem_array('mail_ts', torch.Size([num_nodes, memory_param['mailbox_size']]),
+                                          dtype=torch.float32)
         next_mail_pos = create_shared_mem_array('next_mail_pos', torch.Size([num_nodes]), dtype=torch.long)
         update_mail_pos = create_shared_mem_array('update_mail_pos', torch.Size([num_nodes]), dtype=torch.int32)
         torch.distributed.barrier()
@@ -117,16 +121,21 @@ if memory_param['type'] != 'none':
         update_mail_pos.zero_()
     else:
         torch.distributed.barrier()
-        node_memory = get_shared_mem_array('node_memory', torch.Size([num_nodes, memory_param['dim_out']]), dtype=torch.float32)
+        node_memory = get_shared_mem_array('node_memory', torch.Size([num_nodes, memory_param['dim_out']]),
+                                           dtype=torch.float32)
         node_memory_ts = get_shared_mem_array('node_memory_ts', torch.Size([num_nodes]), dtype=torch.float32)
-        mails = get_shared_mem_array('mails', torch.Size([num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]]), dtype=torch.float32)
-        mail_ts = get_shared_mem_array('mail_ts', torch.Size([num_nodes, memory_param['mailbox_size']]), dtype=torch.float32)
+        mails = get_shared_mem_array('mails', torch.Size(
+            [num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]]), dtype=torch.float32)
+        mail_ts = get_shared_mem_array('mail_ts', torch.Size([num_nodes, memory_param['mailbox_size']]),
+                                       dtype=torch.float32)
         next_mail_pos = get_shared_mem_array('next_mail_pos', torch.Size([num_nodes]), dtype=torch.long)
         update_mail_pos = get_shared_mem_array('update_mail_pos', torch.Size([num_nodes]), dtype=torch.int32)
-    mailbox = MailBox(memory_param, num_nodes, dim_feats[4], node_memory, node_memory_ts, mails, mail_ts, next_mail_pos, update_mail_pos)
+    mailbox = MailBox(memory_param, num_nodes, dim_feats[4], node_memory, node_memory_ts, mails, mail_ts, next_mail_pos,
+                      update_mail_pos)
+
 
 class DataPipelineThread(threading.Thread):
-    
+
     def __init__(self, my_mfgs, my_root, my_ts, my_eid, my_block, stream):
         super(DataPipelineThread, self).__init__()
         self.my_mfgs = my_mfgs
@@ -146,7 +155,8 @@ class DataPipelineThread(threading.Thread):
             # print(args.local_rank, 'start thread')
             nids, eids = get_ids(self.my_mfgs[0], node_feats, edge_feats)
             mfgs = mfgs_to_cuda(self.my_mfgs[0])
-            prepare_input(mfgs, node_feats, edge_feats, pinned=True, nfeat_buffs=pinned_nfeat_buffs, efeat_buffs=pinned_efeat_buffs, nids=nids, eids=eids)
+            prepare_input(mfgs, node_feats, edge_feats, pinned=True, nfeat_buffs=pinned_nfeat_buffs,
+                          efeat_buffs=pinned_efeat_buffs, nids=nids, eids=eids)
             if mailbox is not None:
                 mailbox.prep_input_mails(mfgs[0], use_pinned_buffers=True)
                 self.mfgs = mfgs
@@ -162,10 +172,10 @@ class DataPipelineThread(threading.Thread):
 
     def get_mfgs(self):
         return self.mfgs
-    
+
     def get_root(self):
         return self.root
-    
+
     def get_ts(self):
         return self.ts
 
@@ -180,10 +190,13 @@ if args.local_rank < args.num_gpus:
     # GPU worker process
     model = GeneralModel(dim_feats[1], dim_feats[4], sample_param, memory_param, gnn_param, train_param).cuda()
     find_unused_parameters = True if sample_param['history'] > 1 else False
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], process_group=nccl_group, output_device=args.local_rank, find_unused_parameters=find_unused_parameters)
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], process_group=nccl_group,
+                                                      output_device=args.local_rank,
+                                                      find_unused_parameters=find_unused_parameters)
     creterion = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=train_param['lr'])
-    pinned_nfeat_buffs, pinned_efeat_buffs = get_pinned_buffers(sample_param, train_param['batch_size'], node_feats, edge_feats)
+    pinned_nfeat_buffs, pinned_efeat_buffs = get_pinned_buffers(sample_param, train_param['batch_size'], node_feats,
+                                                                edge_feats)
     if mailbox is not None:
         mailbox.allocate_pinned_memory_buffers(sample_param, train_param['batch_size'])
     tot_loss = 0
@@ -248,8 +261,12 @@ if args.local_rank < args.num_gpus:
                         root_nodes = prev_thread.get_root()
                         ts = prev_thread.get_ts()
                         block = prev_thread.get_block()
-                        mailbox.update_mailbox(model.module.memory_updater.last_updated_nid, model.module.memory_updater.last_updated_memory, root_nodes, ts, mem_edge_feats, block)
-                        mailbox.update_memory(model.module.memory_updater.last_updated_nid, model.module.memory_updater.last_updated_memory, model.module.memory_updater.last_updated_ts)
+                        mailbox.update_mailbox(model.module.memory_updater.last_updated_nid,
+                                               model.module.memory_updater.last_updated_memory, root_nodes, ts,
+                                               mem_edge_feats, block)
+                        mailbox.update_memory(model.module.memory_updater.last_updated_nid,
+                                              model.module.memory_updater.last_updated_memory,
+                                              model.module.memory_updater.last_updated_ts)
                         if memory_param['deliver_to'] == 'neighbors':
                             torch.distributed.barrier(group=nccl_group)
                             if args.local_rank == 0:
@@ -297,8 +314,12 @@ if args.local_rank < args.num_gpus:
                         root_nodes = prev_thread.get_root()
                         ts = prev_thread.get_ts()
                         block = prev_thread.get_block()
-                        mailbox.update_mailbox(model.module.memory_updater.last_updated_nid, model.module.memory_updater.last_updated_memory, root_nodes, ts, mem_edge_feats, block)
-                        mailbox.update_memory(model.module.memory_updater.last_updated_nid, model.module.memory_updater.last_updated_memory, model.module.memory_updater.last_updated_ts)
+                        mailbox.update_mailbox(model.module.memory_updater.last_updated_nid,
+                                               model.module.memory_updater.last_updated_memory, root_nodes, ts,
+                                               mem_edge_feats, block)
+                        mailbox.update_memory(model.module.memory_updater.last_updated_nid,
+                                              model.module.memory_updater.last_updated_memory,
+                                              model.module.memory_updater.last_updated_ts)
                         if memory_param['deliver_to'] == 'neighbors':
                             torch.distributed.barrier(group=nccl_group)
                             if args.local_rank == 0:
@@ -308,7 +329,8 @@ if args.local_rank < args.num_gpus:
             multi_mfgs = [None] * (args.num_gpus + 1)
             torch.distributed.scatter_object_list(my_mfgs, multi_mfgs, src=args.num_gpus)
             mfgs = mfgs_to_cuda(my_mfgs[0])
-            prepare_input(mfgs, node_feats, edge_feats, pinned=True, nfeat_buffs=pinned_nfeat_buffs, efeat_buffs=pinned_efeat_buffs)
+            prepare_input(mfgs, node_feats, edge_feats, pinned=True, nfeat_buffs=pinned_nfeat_buffs,
+                          efeat_buffs=pinned_efeat_buffs)
             model.eval()
             with torch.no_grad():
                 if mailbox is not None:
@@ -334,8 +356,12 @@ if args.local_rank < args.num_gpus:
                         multi_block = [None] * (args.num_gpus + 1)
                         torch.distributed.scatter_object_list(my_block, multi_block, src=args.num_gpus)
                         block = my_block[0]
-                    mailbox.update_mailbox(model.module.memory_updater.last_updated_nid, model.module.memory_updater.last_updated_memory, root_nodes, ts, mem_edge_feats, block)
-                    mailbox.update_memory(model.module.memory_updater.last_updated_nid, model.module.memory_updater.last_updated_memory, model.module.memory_updater.last_updated_ts)
+                    mailbox.update_mailbox(model.module.memory_updater.last_updated_nid,
+                                           model.module.memory_updater.last_updated_memory, root_nodes, ts,
+                                           mem_edge_feats, block)
+                    mailbox.update_memory(model.module.memory_updater.last_updated_nid,
+                                          model.module.memory_updater.last_updated_memory,
+                                          model.module.memory_updater.last_updated_ts)
                     if memory_param['deliver_to'] == 'neighbors':
                         torch.distributed.barrier(group=nccl_group)
                         if args.local_rank == 0:
@@ -354,9 +380,10 @@ else:
     if not ('no_sample' in sample_param and sample_param['no_sample']):
         sampler = ParallelSampler(g['indptr'], g['indices'], g['eid'], g['ts'].astype(np.float32),
                                   sample_param['num_thread'], 1, sample_param['layer'], sample_param['neighbor'],
-                                  sample_param['strategy']=='recent', sample_param['prop_time'],
+                                  sample_param['strategy'] == 'recent', sample_param['prop_time'],
                                   sample_param['history'], float(sample_param['duration']))
     neg_link_sampler = NegLinkSampler(g['indptr'].shape[0] - 1)
+
 
     def eval(mode='val'):
         if mode == 'val':
@@ -376,7 +403,8 @@ else:
         multi_eid = list()
         multi_block = list()
         for _, rows in eval_df.groupby(eval_df.index // train_param['batch_size']):
-            root_nodes = np.concatenate([rows.src.values, rows.dst.values, neg_link_sampler.sample(len(rows))]).astype(np.int32)
+            root_nodes = np.concatenate([rows.src.values, rows.dst.values, neg_link_sampler.sample(len(rows))]).astype(
+                np.int32)
             ts = np.concatenate([rows.time.values, rows.time.values, rows.time.values]).astype(np.float32)
             if sampler is not None:
                 if 'no_neg' in sample_param and sample_param['no_neg']:
@@ -432,6 +460,7 @@ else:
         auc = float(torch.tensor(auc_tot).mean())
         return ap, auc
 
+
     best_ap = 0
     best_e = 0
     tap = 0
@@ -468,10 +497,12 @@ else:
             for i in range(1, train_param['reorder']):
                 additional_idx = np.zeros(train_param['batch_size'] // train_param['reorder'] * i) - 1
                 group_indexes.append(np.concatenate([additional_idx, base_idx])[:base_idx.shape[0]])
-        with tqdm(total=itr_tot + max((val_edge_end - train_edge_end) // train_param['batch_size'] // args.num_gpus, 1) * args.num_gpus) as pbar:
+        with tqdm(total=itr_tot + max((val_edge_end - train_edge_end) // train_param['batch_size'] // args.num_gpus,
+                                      1) * args.num_gpus) as pbar:
             for _, rows in df[:train_edge_end].groupby(group_indexes[random.randint(0, len(group_indexes) - 1)]):
                 t_tot_s = time.time()
-                root_nodes = np.concatenate([rows.src.values, rows.dst.values, neg_link_sampler.sample(len(rows))]).astype(np.int32)
+                root_nodes = np.concatenate(
+                    [rows.src.values, rows.dst.values, neg_link_sampler.sample(len(rows))]).astype(np.int32)
                 ts = np.concatenate([rows.time.values, rows.time.values, rows.time.values]).astype(np.float32)
                 if sampler is not None:
                     if 'no_neg' in sample_param and sample_param['no_neg']:
@@ -519,7 +550,7 @@ else:
                     multi_block = list()
                 pbar.update(1)
                 time_tot += time.time() - t_tot_s
-            print('Training time:',time_tot)
+            print('Training time:', time_tot)
             model_state = [5] * (args.num_gpus + 1)
             my_model_state = [None]
             torch.distributed.scatter_object_list(my_model_state, model_state, src=args.num_gpus)
