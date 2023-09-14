@@ -15,7 +15,11 @@ parser.add_argument('--posneg', default=False, action='store_true', help='for po
 args=parser.parse_args()
 
 '''
+python train_node.py --data REDDIT --config /home/qcsun/tgl-main/config/TGN.yml --model /home/qcsun/wql_tgl/tgl-main/models/REDDIT_TGN.pkl
+
 python train_node.py --data WIKI --config /home/qcsun/tgl-main/config/TGN.yml --model /home/qcsun/wql_tgl/tgl-main/models/WIKI_TGN.pkl
+
+python train_node.py --data GDELT --config /home/qcsun/tgl-main/config/TGN.yml --model /home/qcsun/wql_tgl/tgl-main/models/GDELT_TGN.pkl
 
 '''
 
@@ -41,13 +45,13 @@ role = ldf['ext_roll'].values
 # val_node_end = ldf[ldf['ext_roll'].gt(1)].index[0]
 labels = ldf['label'].values.astype(np.int64)
 
-# emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
-emb_file_name = 'WIKI_TGN1.pt'
+emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
 if not os.path.isdir('embs'):
     os.mkdir('embs')
 
 # 单GPU走if，多GPU走else
-if not os.path.isfile('embs/' + emb_file_name):
+# if not os.path.isfile('embs/' + emb_file_name):
+if True:
     print('Generating temporal embeddings..')
 
     node_feats, edge_feats = load_feat(args.data)
