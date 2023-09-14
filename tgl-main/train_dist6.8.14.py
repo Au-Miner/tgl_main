@@ -25,7 +25,8 @@ python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 -
 
 rsync -avz /home/qcsun/wql_tgl/tgl-main qcsun@node192:/home/qcsun/wql_tgl
 
-要做的内容：
+双机tgl原版
+需要要做的内容：
 所有机子有一个cpu进程和一个gpu进程，cpu负责采样
 直接把模型套到ddp上，就可以分布式采样了，不需要一个主cpu进程统筹管理模型调度
 第一台机子负责处理前50%数据，第二台机子负责后50%数据

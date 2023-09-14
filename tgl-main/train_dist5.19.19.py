@@ -25,6 +25,8 @@ python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 -
 train_dist6.8.14.py --data WIKI_0 --config config/TGN.yml --num_gpus 1
 
 rsync -avz /home/qcsun/wql_tgl/tgl-main qcsun@node192:/home/qcsun/wql_tgl
+
+未知版本，带复查
 '''
 
 # set which GPU to use

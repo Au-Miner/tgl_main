@@ -25,7 +25,8 @@ train_dist2.py --data WIKI --config config/TGN.yml --num_gpus=1 --global_rank=1 
 
 rsync -avz /home/qcsun/wql_tgl/tgl-main qcsun@node192:/home/qcsun/wql_tgl
 
-实现了如下内容版本：
+改版自->双机TGL原版(6.8.14)
+已经实现了如下内容版本：
 所有机子有一个cpu进程和一个gpu进程，cpu负责采样
 直接把模型套到ddp上，就可以分布式采样了，不需要一个主cpu进程统筹管理模型调度
 第一台机子负责处理前50%数据，第二台机子负责后50%数据

@@ -16,6 +16,7 @@ python -m torch.distributed.launch --nproc_per_node=2 train_dist.py --data WIKI 
 python -m torch.distributed.launch --nproc_per_node=2 train_dist1.py --data WIKI --config config/TGN.yml --num_gpus 1
 
 写注释版本
+不可分机启动
 '''
 
 # set which GPU to use

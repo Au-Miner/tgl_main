@@ -1,6 +1,13 @@
 import argparse
 import os
 
+
+
+'''
+原版tgl
+不可分机启动
+'''
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='dataset name')
 parser.add_argument('--config', type=str, help='path to config file')
