@@ -52,7 +52,7 @@ torch.distributed.init_process_group(backend='gloo')
 nccl_group = torch.distributed.new_group(ranks=list(range(args.num_gpus)), backend='nccl')
 
 if args.local_rank == 0:
-    # 从'/home/qcsun/DistTGL/data/{}/node_features.pt'中加载点特征
+    # 从'/home/qcsun/DATA/{}/node_features.pt'中加载点特征
     _node_feats, _edge_feats = load_feat(args.data)
 dim_feats = [0, 0, 0, 0, 0, 0]
 if args.local_rank == 0:
@@ -79,9 +79,9 @@ torch.distributed.broadcast_object_list(dim_feats, src=0)
 if args.local_rank > 0 and args.local_rank < args.num_gpus:
     node_feats = None
     edge_feats = None
-    if os.path.exists('/home/qcsun/DistTGL/data/{}/node_features.pt'.format(args.data)):
+    if os.path.exists('/home/qcsun/DATA/{}/node_features.pt'.format(args.data)):
         node_feats = get_shared_mem_array('node_feats', (dim_feats[0], dim_feats[1]), dtype=dim_feats[2])
-    if os.path.exists('/home/qcsun/DistTGL/data/{}/edge_features.pt'.format(args.data)):
+    if os.path.exists('/home/qcsun/DATA/{}/edge_features.pt'.format(args.data)):
         edge_feats = get_shared_mem_array('edge_feats', (dim_feats[3], dim_feats[4]), dtype=dim_feats[5])
 # 通过config地址来获取具体变量的参数
 sample_param, memory_param, gnn_param, train_param = parse_config(args.config)
@@ -272,7 +272,7 @@ else:
                                   sample_param['history'], float(sample_param['duration']))
     neg_link_sampler = NegLinkSampler(g['indptr'].shape[0] - 1)
 
-    ldf = pd.read_csv('/home/qcsun/DistTGL/data/{}/labels.csv'.format(args.data))
+    ldf = pd.read_csv('/home/qcsun/DATA/{}/labels.csv'.format(args.data))
     args.batch_size = math.ceil(len(ldf) / (len(ldf) // args.batch_size // args.num_gpus * args.num_gpus))
     train_param['batch_size'] = math.ceil(
         len(df) / (len(df) // train_param['batch_size'] // args.num_gpus * args.num_gpus))

@@ -8,9 +8,9 @@ from tqdm import tqdm
 '''
 python gen_graph.py --data WIKI
 
-rsync -avz /home/qcsun/DistTGL/data/GDELT qcsun@node191:/home/qcsun/DistTGL/data/
-rsync -avz /home/qcsun/DistTGL/data/REDDIT qcsun@node191:/home/qcsun/DistTGL/data/
-rsync -avz /home/qcsun/DistTGL/data/WIKI qcsun@node191:/home/qcsun/DistTGL/data/
+rsync -avz /home/qcsun/DATA/GDELT qcsun@node191:/home/qcsun/DATA/
+rsync -avz /home/qcsun/DATA/REDDIT qcsun@node191:/home/qcsun/DATA/
+rsync -avz /home/qcsun/DATA/WIKI qcsun@node191:/home/qcsun/DATA/
 '''
 
 
@@ -21,7 +21,7 @@ args=parser.parse_args()
 
 args.data = 'GDELT'
 
-df = pd.read_csv('/home/qcsun/DistTGL/data/{}/edges.csv'.format(args.data))
+df = pd.read_csv('/home/qcsun/DATA/{}/edges.csv'.format(args.data))
 num_nodes = max(int(df['src'].max()), int(df['dst'].max())) + 1
 print('num_nodes: ', num_nodes)
 
@@ -103,6 +103,6 @@ for i in tqdm(range(int_train_indptr.shape[0] - 1)):
 
 # import pdb; pdb.set_trace()
 print('saving...')
-np.savez('/home/qcsun/DistTGL/data/{}/int_train.npz'.format(args.data), indptr=int_train_indptr, indices=int_train_indices, ts=int_train_ts, eid=int_train_eid)
-np.savez('/home/qcsun/DistTGL/data/{}/int_full.npz'.format(args.data), indptr=int_full_indptr, indices=int_full_indices, ts=int_full_ts, eid=int_full_eid)
-np.savez('/home/qcsun/DistTGL/data/{}/ext_full.npz'.format(args.data), indptr=ext_full_indptr, indices=ext_full_indices, ts=ext_full_ts, eid=ext_full_eid)
+np.savez('/home/qcsun/DATA/{}/int_train.npz'.format(args.data), indptr=int_train_indptr, indices=int_train_indices, ts=int_train_ts, eid=int_train_eid)
+np.savez('/home/qcsun/DATA/{}/int_full.npz'.format(args.data), indptr=int_full_indptr, indices=int_full_indices, ts=int_full_ts, eid=int_full_eid)
+np.savez('/home/qcsun/DATA/{}/ext_full.npz'.format(args.data), indptr=ext_full_indptr, indices=ext_full_indices, ts=ext_full_ts, eid=ext_full_eid)

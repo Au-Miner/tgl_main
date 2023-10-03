@@ -110,9 +110,9 @@ torch.distributed.broadcast_object_list(dim_feats, src=0)
 if args.local_rank > 0 and args.local_rank < args.num_gpus:
     node_feats = None
     edge_feats = None
-    if os.path.exists('/home/qcsun/DistTGL/data/{}/node_features.pt'.format(args.data)):
+    if os.path.exists('/home/qcsun/DATA/{}/node_features.pt'.format(args.data)):
         node_feats = get_shared_mem_array('node_feats', (dim_feats[0], dim_feats[1]), dtype=dim_feats[2])
-    if os.path.exists('/home/qcsun/DistTGL/data/{}/edge_features.pt'.format(args.data)):
+    if os.path.exists('/home/qcsun/DATA/{}/edge_features.pt'.format(args.data)):
         edge_feats = get_shared_mem_array('edge_feats', (dim_feats[3], dim_feats[4]), dtype=dim_feats[5])
 sample_param, memory_param, gnn_param, train_param = parse_config(args.config)
 orig_batch_size = train_param['batch_size']

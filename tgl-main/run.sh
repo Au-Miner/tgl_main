@@ -39,3 +39,40 @@ fi
 
 
 
+rsync -avz /home/qcsun/wql_tgl/tgl-main qcsun@node191:/home/qcsun/wql_tgl
+rsync -avz qcsun@node192:/home/qcsun/DATA/REDDIT /home/qcsun/DATA
+
+
+python -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 --master_addr="10.214.151.192" \
+--master_port=34567 train_dist9.7.24.py --data WIKI --config config/TGN.yml --num_gpus=1
+
+python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 --master_addr="10.214.151.192" \
+--master_port=34567 train_dist9.7.24.py --data WIKI --config config/TGN.yml --num_gpus=1
+
+###4
+
+python -m torch.distributed.launch --nproc_per_node=2 --nnodes=4 --node_rank=0 --master_addr="10.214.151.192" \
+--master_port=34567 train_dist2.py --data REDDIT --config config/TGN.yml --num_gpus=1
+
+python -m torch.distributed.launch --nproc_per_node=1 --nnodes=4 --node_rank=1 --master_addr="10.214.151.192" \
+--master_port=34567 train_dist2.py --data REDDIT --config config/TGN.yml --num_gpus=1
+
+python -m torch.distributed.launch --nproc_per_node=1 --nnodes=4 --node_rank=2 --master_addr="10.214.151.192" \
+--master_port=34567 train_dist2.py --data REDDIT --config config/TGN.yml --num_gpus=1
+
+python -m torch.distributed.launch --nproc_per_node=1 --nnodes=4 --node_rank=3 --master_addr="10.214.151.192" \
+--master_port=34567 train_dist2.py --data REDDIT --config config/TGN.yml --num_gpus=1
+
+
+
+
+rsync -avz /home/qcsun/wql_tgl/tgl-main qcsun@node198:/home/qcsun/wql_tgl
+python -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 --master_addr="10.214.151.191" \
+--master_port=34567 train_dist2.py --data WIKI --config config/TGN.yml --num_gpus=1
+
+python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 --master_addr="10.214.151.191" \
+--master_port=34567 train_dist2.py --data WIKI --config config/TGN.yml --num_gpus=1
+
+
+python -m torch.distributed.launch --nproc_per_node=2 --nnodes=1 --node_rank=0 --master_addr="10.214.151.191" \
+--master_port=34567 train_dist2.py --data WIKI --config config/TGN.yml --num_gpus=1

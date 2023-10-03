@@ -39,7 +39,7 @@ from utils import *
 from tqdm import tqdm
 from sklearn.metrics import average_precision_score, f1_score
 
-ldf = pd.read_csv('/home/qcsun/DistTGL/data/{}/labels.csv'.format(args.data))
+ldf = pd.read_csv('/home/qcsun/DATA/{}/labels.csv'.format(args.data))
 role = ldf['ext_roll'].values
 # train_node_end = ldf[ldf['ext_roll'].gt(0)].index[0]
 # val_node_end = ldf[ldf['ext_roll'].gt(1)].index[0]

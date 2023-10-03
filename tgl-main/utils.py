@@ -8,13 +8,13 @@ import numpy as np
 
 def load_feat(d, rand_de=0, rand_dn=0):
     node_feats = None
-    if os.path.exists('/home/qcsun/DistTGL/data/{}/node_features.pt'.format(d)):
-        node_feats = torch.load('/home/qcsun/DistTGL/data/{}/node_features.pt'.format(d))
+    if os.path.exists('/home/qcsun/DATA/{}/node_features.pt'.format(d)):
+        node_feats = torch.load('/home/qcsun/DATA/{}/node_features.pt'.format(d))
         if node_feats.dtype == torch.bool:
             node_feats = node_feats.type(torch.float32)
     edge_feats = None
-    if os.path.exists('/home/qcsun/DistTGL/data/{}/edge_features.pt'.format(d)):
-        edge_feats = torch.load('/home/qcsun/DistTGL/data/{}/edge_features.pt'.format(d))
+    if os.path.exists('/home/qcsun/DATA/{}/edge_features.pt'.format(d)):
+        edge_feats = torch.load('/home/qcsun/DATA/{}/edge_features.pt'.format(d))
         print("edge_feats.dtype111: ", edge_feats.dtype)
         print(edge_feats.shape)
         # if edge_feats.dtype == torch.bool:
@@ -34,8 +34,8 @@ def load_feat(d, rand_de=0, rand_dn=0):
     return node_feats, edge_feats
 
 def load_graph(d):
-    df = pd.read_csv('/home/qcsun/DistTGL/data/{}/edges.csv'.format(d))
-    g = np.load('/home/qcsun/DistTGL/data/{}/ext_full.npz'.format(d))
+    df = pd.read_csv('/home/qcsun/DATA/{}/edges.csv'.format(d))
+    g = np.load('/home/qcsun/DATA/{}/ext_full.npz'.format(d))
     return g, df
 
 def parse_config(f):
@@ -131,7 +131,6 @@ def prepare_input(mfgs, node_feats, edge_feats, combine_first=False, pinned=Fals
                             idx = eids[i]
                         else:
                             idx = b.edata['ID'].cpu().long()
-
                         torch.index_select(edge_feats, 0, idx, out=efeat_buffs[i][:idx.shape[0]])
                         b.edata['f'] = efeat_buffs[i][:idx.shape[0]].cuda(non_blocking=True)
                         i += 1

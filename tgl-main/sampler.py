@@ -23,13 +23,13 @@ if __name__ == '__main__':
     parser.add_argument('--num_thread', type=int, default=64, help='number of thread')
     args=parser.parse_args()
 
-    df = pd.read_csv('/home/qcsun/DistTGL/data/{}/edges.csv'.format(args.data))
-    g = np.load('/home/qcsun/DistTGL/data/{}/ext_full.npz'.format(args.data))
+    df = pd.read_csv('/home/qcsun/DATA/{}/edges.csv'.format(args.data))
+    g = np.load('/home/qcsun/DATA/{}/ext_full.npz'.format(args.data))
     sample_config = yaml.safe_load(open(args.config, 'r'))['sampling'][0]
 
     sampler = ParallelSampler(g['indptr'], g['indices'], g['eid'], g['ts'].astype(np.float32),
                               args.num_thread, 1, sample_config['layer'], sample_config['neighbor'],
-                              sample_config['strategy']=='recent', sample_config['prop_time'],
+                              sample_config['strategy'] == 'recent', sample_config['prop_time'],
                               sample_config['history'], float(sample_config['duration']))
 
     num_nodes = max(int(df['src'].max()), int(df['dst'].max()))

@@ -34,7 +34,6 @@ class EdgePredictor(torch.nn.Module):
         h_neg_edge = torch.nn.functional.relu(h_src.tile(neg_samples, 1) + h_neg_dst)
         return self.out_fc(h_pos_edge), self.out_fc(h_neg_edge)
 
-
 class TransfomerAttentionLayer(torch.nn.Module):
 
     def __init__(self, dim_node_feat, dim_edge_feat, dim_time, num_head, dropout, att_dropout, dim_out, combined=False):
@@ -133,7 +132,8 @@ class TransfomerAttentionLayer(torch.nn.Module):
             att = self.att_dropout(att)
             V = torch.reshape(V*att[:, :, None], (V.shape[0], -1))
             b.srcdata['v'] = torch.cat([torch.zeros((b.num_dst_nodes(), V.shape[1]), device=torch.device('cuda:0')), V], dim=0)
-            b.update_all(dgl.function.copy_src('v', 'm'), dgl.function.sum('m', 'h'))
+            # b.update_all(dgl.function.copy_src('v', 'm'), dgl.function.sum('m', 'h'))
+            b.update_all(dgl.function.copy_u('v', 'm'), dgl.function.sum('m', 'h'))
         if self.dim_node_feat != 0:
             rst = torch.cat([b.dstdata['h'], b.srcdata['h'][:b.num_dst_nodes()]], dim=1)
         else:
@@ -171,4 +171,3 @@ class JODIETimeEmbedding(torch.nn.Module):
         time_diff = (ts - mem_ts) / (ts + 1)
         rst = h * (1 + self.time_emb(time_diff.unsqueeze(1)))
         return rst
-            

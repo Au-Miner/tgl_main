@@ -89,8 +89,8 @@ lis_train_time = []
 set_seed(args.seed)
 torch.distributed.init_process_group(backend='gloo', timeout=datetime.timedelta(0, 3600000), init_method='env://')
 # 注意这里group定义
-ranks = [0, 2]
-all_proc = 2
+ranks = [0, 2, 3, 4]
+all_proc = 4
 # nccl_group = torch.distributed.new_group(ranks=list(range(args.num_gpus)), backend='nccl')
 nccl_group = torch.distributed.new_group(ranks=ranks, backend='nccl')
 dim_feats = [0, 0, 0, 0, 0, 0]
@@ -162,9 +162,9 @@ print("读取完成")
 # if args.local_rank > 0 and args.local_rank < args.num_gpus:
 #     node_feats = None
 #     edge_feats = None
-#     if os.path.exists('/home/qcsun/DistTGL/data/{}/node_features.pt'.format(args.data)):
+#     if os.path.exists('/home/qcsun/DATA/{}/node_features.pt'.format(args.data)):
 #         node_feats = get_shared_mem_array('node_feats', (dim_feats[0], dim_feats[1]), dtype=dim_feats[2])
-#     if os.path.exists('/home/qcsun/DistTGL/data/{}/edge_features.pt'.format(args.data)):
+#     if os.path.exists('/home/qcsun/DATA/{}/edge_features.pt'.format(args.data)):
 #         edge_feats = get_shared_mem_array('edge_feats', (dim_feats[3], dim_feats[4]), dtype=dim_feats[5])
 
 

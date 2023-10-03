@@ -249,6 +249,13 @@ class TransformerMemoryUpdater(torch.nn.Module):
 
     def __init__(self, memory_param, dim_in, dim_out, dim_time, train_param):
         super(TransformerMemoryUpdater, self).__init__()
+        print("===================================")
+        print(dim_in)
+        print(dim_out)
+        print(dim_time)
+
+
+
         self.memory_param = memory_param
         self.dim_time = dim_time
         self.att_h = memory_param['attention_head']

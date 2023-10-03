@@ -19,44 +19,30 @@ args = parser.parse_args()
 
 //python -m torch.distributed.launch --nproc_per_node=2 train_dist1.py --data WIKI_0 --config config/TGN.yml --num_gpus 1
 
-#TGL WIKI
-python -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 --master_addr="10.214.151.192" --master_port=34567 train_dist_tmp.py --data WIKI --config config/TGN.yml --num_gpus=1
+python -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 --master_addr="10.214.151.191" --master_port=34567 train_dist6.8.14.py --data WIKI --config config/TGN.yml --num_gpus=1
 
-python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 --master_addr="10.214.151.192" --master_port=34567 train_dist_tmp.py --data WIKI --config config/TGN.yml --num_gpus=1
-
-#TGL REDDIT
-python -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 --master_addr="10.214.151.192" --master_port=34567 train_dist_tmp.py --data REDDIT --config config/TGN.yml --num_gpus=1
-
-python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 --master_addr="10.214.151.192" --master_port=34567 train_dist_tmp.py --data REDDIT --config config/TGN.yml --num_gpus=1
-
-#TGL GDELT
-python -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 --master_addr="10.214.151.192" --master_port=34567 train_dist_tmp.py --data GDELT --config config/TGN.yml --num_gpus=1
-
-python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 --master_addr="10.214.151.192" --master_port=34567 train_dist_tmp.py --data GDELT --config config/TGN.yml --num_gpus=1
+python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 --master_addr="10.214.151.191" --master_port=34567 train_dist6.8.14.py --data WIKI --config config/TGN.yml --num_gpus=1
 
 rsync -avz /home/qcsun/wql_tgl/tgl-main qcsun@node192:/home/qcsun/wql_tgl
 
-如何删除共享内存段(管理员模式)：
-ls /dev/shm
-rm -rf /dev/shm/mails /dev/shm/mail_ts /dev/shm/next_mail_pos /dev/shm/node_memory 
-rm -rf /dev/shm/node_memory_ts /dev/shm/edge_feats /dev/shm/update_mail_pos
-echo 3 > /proc/sys/vm/drop_caches
-
-./clear.sh
-lsof -i:34567
-./run.sh GDELT
-
-改版自->双机TGL原版(6.8.14)
-修改了内存使用情况，允许双机启动
+双机tgl原版
+需要要做的内容：
+所有机子有一个cpu进程和一个gpu进程，cpu负责采样
+直接把模型套到ddp上，就可以分布式采样了，不需要一个主cpu进程统筹管理模型调度
+第一台机子负责处理前50%数据，第二台机子负责后50%数据
 '''
 
 # set which GPU to use
 if args.local_rank < args.num_gpus:
     os.environ['CUDA_VISIBLE_DEVICES'] = str(args.local_rank)
+    print("os.environ['CUDA_VISIBLE_DEVICES']: ", os.environ['CUDA_VISIBLE_DEVICES'])
 else:
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    print("os.environ['CUDA_VISIBLE_DEVICES']: ", os.environ['CUDA_VISIBLE_DEVICES'])
 os.environ['OMP_NUM_THREADS'] = str(args.omp_num_threads)
 os.environ['MKL_NUM_THREADS'] = str(args.omp_num_threads)
+
+
 
 import torch
 import dgl
@@ -87,96 +73,68 @@ lis_sample_time = []
 lis_train_time = []
 
 set_seed(args.seed)
-torch.distributed.init_process_group(backend='gloo', timeout=datetime.timedelta(0, 3600000), init_method='env://')
+torch.distributed.init_process_group(backend='gloo', timeout=datetime.timedelta(0, 3600), init_method='env://')
 # 注意这里group定义
-ranks = [0, 2]
-all_proc = 2
+ranks = [0]
+all_proc = 1
 # nccl_group = torch.distributed.new_group(ranks=list(range(args.num_gpus)), backend='nccl')
 nccl_group = torch.distributed.new_group(ranks=ranks, backend='nccl')
+
+# local_rank范围从[0, num_gpus]，其中num_gpus为cpu执行
+if args.local_rank == 0:
+    # 加载点特征和边特征
+    _node_feats, _edge_feats = load_feat(args.data)
 dim_feats = [0, 0, 0, 0, 0, 0]
-
-
-
-print("正在读取特征")
-node_feats, edge_feats = None, None
-if args.local_rank < args.num_gpus:
-    node_feats, edge_feats = load_feat(args.data)
-    if node_feats is not None:
-        dim_feats[0] = node_feats.shape[0]
-        dim_feats[1] = node_feats.shape[1]
-        dim_feats[2] = node_feats.dtype
-    if edge_feats is not None:
-        dim_feats[3] = edge_feats.shape[0]
-        dim_feats[4] = edge_feats.shape[1]
-        dim_feats[5] = edge_feats.dtype
-
-    print("edge_feats.dtype222: ", edge_feats.dtype)
-print("读取完成")
-
-
-
-# # local_rank范围从[0, num_gpus]，其中num_gpus为cpu执行
-# if args.local_rank == 0:
-#     # 加载点特征和边特征
-#     _node_feats, _edge_feats = load_feat(args.data)
-# # 对于第1个GPU创建共享变量
-# if args.local_rank == 0:
-#     # print("准备开始读取节点特征和边特征")
-#     if _node_feats is not None:
-#         # 创建内存共享节点/边特征变量node_feats和edge_feats
-#         # dim_feats[0]表示节点个数，dim_feats[1]表示节点dim，dim_feats[2]表示节点类型
-#         dim_feats[0] = _node_feats.shape[0]
-#         dim_feats[1] = _node_feats.shape[1]
-#         dim_feats[2] = _node_feats.dtype
-#         # node_feats = create_shared_mem_array('node_feats', _node_feats.shape, dtype=_node_feats.dtype)
-#         node_feats = create_shared_mem_array('node_feats', _node_feats.shape, dtype=torch.float32)
-#         node_feats.copy_(_node_feats)
-#         # print("正在读取节点特征，节点特征总共有", _node_feats.size())
-#         del _node_feats
-#     else:
-#         node_feats = None
-#     if _edge_feats is not None:
-#         # print("woc: ", _edge_feats.dtype)
-#         # print("woc: ", _edge_feats.shape[0])
-#         # print("woc: ", _edge_feats.shape[1])
-#         # print("woc: ", _edge_feats.dtype)
-#         print(args.local_rank, "===111")
-#         dim_feats[3] = _edge_feats.shape[0]
-#         dim_feats[4] = _edge_feats.shape[1]
-#         dim_feats[5] = _edge_feats.dtype
-#         # edge_feats = create_shared_mem_array('edge_feats', _edge_feats.shape, dtype=_edge_feats.dtype)
-#         edge_feats = create_shared_mem_array('edge_feats', _edge_feats.shape, dtype=torch.float32)
-#         print(args.local_rank, "===222")
-#         edge_feats.copy_(_edge_feats)
-#         # print("正在读取边特征，边特征总共有", _edge_feats.size())
-#         del _edge_feats
-#     else:
-#         edge_feats = None
-# # 进程第一次同步，保证edge_feats和node_feats被移动到内存中
+# 对于第1个GPU创建共享变量
+if args.local_rank == 0:
+    # print("准备开始读取节点特征和边特征")
+    if _node_feats is not None:
+        # 创建内存共享节点/边特征变量node_feats和edge_feats
+        # dim_feats[0]表示节点个数，dim_feats[1]表示节点dim，dim_feats[2]表示节点类型
+        dim_feats[0] = _node_feats.shape[0]
+        dim_feats[1] = _node_feats.shape[1]
+        dim_feats[2] = _node_feats.dtype
+        node_feats = create_shared_mem_array('node_feats', _node_feats.shape, dtype=_node_feats.dtype)
+        # node_feats = create_shared_mem_array('node_feats', _node_feats.shape, dtype=torch.float32)
+        node_feats.copy_(_node_feats)
+        # print("正在读取节点特征，节点特征总共有", _node_feats.size())
+        del _node_feats
+    else:
+        node_feats = None
+    if _edge_feats is not None:
+        # print("woc: ", _edge_feats.dtype)
+        # print("woc: ", _edge_feats.shape[0])
+        # print("woc: ", _edge_feats.shape[1])
+        # print("woc: ", _edge_feats.dtype)
+        # print(args.local_rank, "===111")
+        dim_feats[3] = _edge_feats.shape[0]
+        dim_feats[4] = _edge_feats.shape[1]
+        dim_feats[5] = _edge_feats.dtype
+        edge_feats = create_shared_mem_array('edge_feats', _edge_feats.shape, dtype=_edge_feats.dtype)
+        # edge_feats = create_shared_mem_array('edge_feats', _edge_feats.shape, dtype=torch.float32)
+        # print(args.local_rank, "===222")
+        edge_feats.copy_(_edge_feats)
+        # print("正在读取边特征，边特征总共有", _edge_feats.size())
+        del _edge_feats
+    else:
+        edge_feats = None
+# 进程第一次同步，保证edge_feats和node_feats被移动到内存中
 # print(args.local_rank, "===333")
-# torch.distributed.barrier()
+torch.distributed.barrier()
 # print(args.local_rank, "===444")
-# torch.distributed.broadcast_object_list(dim_feats, src=0)
+torch.distributed.broadcast_object_list(dim_feats, src=0)
 # print(args.local_rank, "===555")
-# # 其他gpu进程从内存中读取edge_feats和node_feats
-# if args.local_rank > 0 and args.local_rank < args.num_gpus:
-#     node_feats = None
-#     edge_feats = None
-#     if os.path.exists('/home/qcsun/DistTGL/data/{}/node_features.pt'.format(args.data)):
-#         node_feats = get_shared_mem_array('node_feats', (dim_feats[0], dim_feats[1]), dtype=dim_feats[2])
-#     if os.path.exists('/home/qcsun/DistTGL/data/{}/edge_features.pt'.format(args.data)):
-#         edge_feats = get_shared_mem_array('edge_feats', (dim_feats[3], dim_feats[4]), dtype=dim_feats[5])
-
-
-
-
-
-
-
+# 其他gpu进程从内存中读取edge_feats和node_feats
+if args.local_rank > 0 and args.local_rank < args.num_gpus:
+    node_feats = None
+    edge_feats = None
+    if os.path.exists('/home/qcsun/DATA/{}/node_features.pt'.format(args.data)):
+        node_feats = get_shared_mem_array('node_feats', (dim_feats[0], dim_feats[1]), dtype=dim_feats[2])
+    if os.path.exists('/home/qcsun/DATA/{}/edge_features.pt'.format(args.data)):
+        edge_feats = get_shared_mem_array('edge_feats', (dim_feats[3], dim_feats[4]), dtype=dim_feats[5])
 sample_param, memory_param, gnn_param, train_param = parse_config(args.config)
 orig_batch_size = train_param['batch_size']
 # 定义模型存储路径
-print("定义模型存储路径")
 if args.local_rank == 0:
     if not os.path.isdir('models'):
         os.mkdir('models')
@@ -185,16 +143,14 @@ else:
     path_saver = [None]
 torch.distributed.broadcast_object_list(path_saver, src=0)
 path_saver = path_saver[0]
-print("定义模型存储路径完成")
+
 # 如果是最后一个进程，即CPU进程，则获取图信息g和所有边信息df
-print("获取图信息g和所有边信息df")
 if args.local_rank == args.num_gpus:
     g, df = load_graph(args.data)
     num_nodes = [g['indptr'].shape[0] - 1]
 else:
     num_nodes = [None]
 # 等待cpu读取完g和df，然后将节点个数广播给所有进程
-print("将节点个数广播给所有进程")
 torch.distributed.barrier()
 torch.distributed.broadcast_object_list(num_nodes, src=args.num_gpus)
 num_nodes = num_nodes[0]
@@ -202,12 +158,34 @@ num_nodes = num_nodes[0]
 mailbox = None
 # 如果需要memory，则创建mailbox的内存共享环境，mailbox可以理解为就是用来存memory的数据结构
 if memory_param['type'] != 'none':
-    node_memory = torch.zeros((num_nodes, memory_param['dim_out']), dtype=torch.float32)
-    node_memory_ts = torch.zeros(num_nodes, dtype=torch.float32)
-    mails = torch.zeros((num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]), dtype=torch.float32)
-    mail_ts = torch.zeros((num_nodes, memory_param['mailbox_size']), dtype=torch.float32)
-    next_mail_pos = torch.zeros(num_nodes, dtype=torch.long)
-    update_mail_pos = torch.zeros(num_nodes, dtype=torch.int32)
+    if args.local_rank == 0:
+        node_memory = create_shared_mem_array('node_memory', torch.Size([num_nodes, memory_param['dim_out']]),
+                                              dtype=torch.float32)
+        node_memory_ts = create_shared_mem_array('node_memory_ts', torch.Size([num_nodes]), dtype=torch.float32)
+        mails = create_shared_mem_array('mails', torch.Size(
+            [num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]]), dtype=torch.float32)
+        mail_ts = create_shared_mem_array('mail_ts', torch.Size([num_nodes, memory_param['mailbox_size']]),
+                                          dtype=torch.float32)
+        next_mail_pos = create_shared_mem_array('next_mail_pos', torch.Size([num_nodes]), dtype=torch.long)
+        update_mail_pos = create_shared_mem_array('update_mail_pos', torch.Size([num_nodes]), dtype=torch.int32)
+        torch.distributed.barrier()
+        node_memory.zero_()
+        node_memory_ts.zero_()
+        mails.zero_()
+        mail_ts.zero_()
+        next_mail_pos.zero_()
+        update_mail_pos.zero_()
+    else:
+        torch.distributed.barrier()
+        node_memory = get_shared_mem_array('node_memory', torch.Size([num_nodes, memory_param['dim_out']]),
+                                           dtype=torch.float32)
+        node_memory_ts = get_shared_mem_array('node_memory_ts', torch.Size([num_nodes]), dtype=torch.float32)
+        mails = get_shared_mem_array('mails', torch.Size(
+            [num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_feats[4]]), dtype=torch.float32)
+        mail_ts = get_shared_mem_array('mail_ts', torch.Size([num_nodes, memory_param['mailbox_size']]),
+                                       dtype=torch.float32)
+        next_mail_pos = get_shared_mem_array('next_mail_pos', torch.Size([num_nodes]), dtype=torch.long)
+        update_mail_pos = get_shared_mem_array('update_mail_pos', torch.Size([num_nodes]), dtype=torch.int32)
     mailbox = MailBox(memory_param, num_nodes, dim_feats[4], node_memory, node_memory_ts, mails, mail_ts, next_mail_pos,
                       update_mail_pos)
 
@@ -268,21 +246,16 @@ class DataPipelineThread(threading.Thread):
         return self.block
 
 
-print("准备开始分进程执行")
 # 如果是gpu进程
 if args.local_rank < args.num_gpus:
     # 创建模型
     model = GeneralModel(dim_feats[1], dim_feats[4], sample_param, memory_param, gnn_param, train_param).cuda()
-    # find_unused_parameters = True if sample_param['history'] > 1 else False
+    find_unused_parameters = True if sample_param['history'] > 1 else False
     # 将其设置为分布式模型
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], process_group=nccl_group,
-                                                      output_device=args.local_rank, find_unused_parameters=True)
-    ls = [name for name, para in model.named_parameters() if para.grad == None]
-    print("！！！！！！！！！！！！！！！！！")
-    print(ls)
-
+                                                      output_device=args.local_rank,
+                                                      find_unused_parameters=find_unused_parameters)
     # 创建损失函数
-    print("创建分布式模型结束")
     creterion = torch.nn.BCEWithLogitsLoss()
     # 创建优化器
     optimizer = torch.optim.Adam(model.parameters(), lr=train_param['lr'])
@@ -389,8 +362,6 @@ if args.local_rank < args.num_gpus:
                             torch.distributed.barrier()
                             if args.local_rank == 0:
                                 mailbox.update_next_mail_pos()
-                        # del mem_edge_feats, root_nodes, ts, block
-                # del prev_thread
                 prev_thread = curr_thread
             else:
                 my_mfgs = [None]
@@ -462,7 +433,6 @@ if args.local_rank < args.num_gpus:
                             torch.distributed.barrier()
                             if args.local_rank == 0:
                                 mailbox.update_next_mail_pos()
-                        # del mem_edge_feats, root_nodes, ts, block
                 prev_thread = None
             # 不开额外线程了，直接开始运行
             my_mfgs = [None]
@@ -508,7 +478,6 @@ if args.local_rank < args.num_gpus:
                                           model.module.memory_updater.last_updated_memory,
                                           root_nodes,
                                           model.module.memory_updater.last_updated_ts)
-                    # del mem_edge_feats, root_nodes, ts, block
                     if memory_param['deliver_to'] == 'neighbors':
                         torch.distributed.barrier()
                         if args.local_rank == 0:
@@ -526,7 +495,6 @@ else:
     val_edge_end = df[df['ext_roll'].gt(1)].index[0]
     sampler = None
     # 定义正负采样对象
-    print("定义正负采样对象")
     if not ('no_sample' in sample_param and sample_param['no_sample']):
         sampler = ParallelSampler(g['indptr'], g['indices'], g['eid'], g['ts'].astype(np.float32),
                                   sample_param['num_thread'], 1, sample_param['layer'], sample_param['neighbor'],
@@ -631,7 +599,6 @@ else:
     tap = 0
     tauc = 0
     # 开始epoch轮训练
-    print("开始epoch轮训练")
     for e in range(train_param['epoch']):
         t_tot_s2 = time.time()
         mark = 0
