@@ -149,13 +149,17 @@ def prepare_input(mfgs, node_feats, edge_feats, combine_first=False, pinned=Fals
 def get_ids(mfgs, node_feats, edge_feats):
     nids = list()
     eids = list()
+    # print("正在查看edge_feats和node_feats是否为空")
     if node_feats is not None:
+        # pring("node_feats不为空")
         for b in mfgs[0]:
             nids.append(b.srcdata['ID'].long())
     if edge_feats is not None:
+        # pring("edge_feats不为空")
         for mfg in mfgs:
             for b in mfg:
-                eids.append(b.edata['ID'].long())
+                if 'ID' in b.edata:
+                    eids.append(b.edata['ID'].long())
     return nids, eids
 
 def get_pinned_buffers(sample_param, batch_size, node_feats, edge_feats):

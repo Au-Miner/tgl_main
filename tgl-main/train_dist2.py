@@ -2,6 +2,7 @@ import argparse
 import os
 import time
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='dataset name')
 parser.add_argument('--config', type=str, help='path to config file')
@@ -19,9 +20,9 @@ args = parser.parse_args()
 
 //python -m torch.distributed.launch --nproc_per_node=2 train_dist1.py --data WIKI_0 --config config/TGN.yml --num_gpus 1
 
-python -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 --master_addr="10.214.151.191" --master_port=34567 train_dist6.8.14.py --data WIKI --config config/TGN.yml --num_gpus=1
+python -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 --master_addr="10.214.151.191" --master_port=34567 train_dist2.py --data WIKI --config config/TGN.yml --num_gpus=1
 
-python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 --master_addr="10.214.151.191" --master_port=34567 train_dist6.8.14.py --data WIKI --config config/TGN.yml --num_gpus=1
+python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 --master_addr="10.214.151.191" --master_port=34567 train_dist2.py --data WIKI --config config/TGN.yml --num_gpus=1
 
 rsync -avz /home/qcsun/wql_tgl/tgl-main qcsun@node192:/home/qcsun/wql_tgl
 
@@ -75,8 +76,8 @@ lis_train_time = []
 set_seed(args.seed)
 torch.distributed.init_process_group(backend='gloo', timeout=datetime.timedelta(0, 3600), init_method='env://')
 # 注意这里group定义
-ranks = [0]
-all_proc = 1
+ranks = [0, 2, 3, 4]
+all_proc = 4
 # nccl_group = torch.distributed.new_group(ranks=list(range(args.num_gpus)), backend='nccl')
 nccl_group = torch.distributed.new_group(ranks=ranks, backend='nccl')
 
@@ -143,6 +144,11 @@ else:
     path_saver = [None]
 torch.distributed.broadcast_object_list(path_saver, src=0)
 path_saver = path_saver[0]
+
+print("dim_node", dim_feats[1])
+print("dim_node", dim_feats[1])
+print("dim_node", dim_feats[1])
+print("dim_node", dim_feats[1])
 
 # 如果是最后一个进程，即CPU进程，则获取图信息g和所有边信息df
 if args.local_rank == args.num_gpus:
@@ -212,14 +218,16 @@ class DataPipelineThread(threading.Thread):
             # print(args.local_rank, 'start thread')
             nids, eids = get_ids(self.my_mfgs[0], node_feats, edge_feats)
             mfgs = mfgs_to_cuda(self.my_mfgs[0])
-            # print("线程创建开始读到的mfgs为", mfgs)
+            # print("222mfgs为", mfgs)
             prepare_input(mfgs, node_feats, edge_feats, pinned=True, nfeat_buffs=pinned_nfeat_buffs,
                           efeat_buffs=pinned_efeat_buffs, nids=nids, eids=eids)
+            # print("333mfgs为", mfgs)
+            self.mfgs = mfgs
             if mailbox is not None:
                 # print("此时mailbox非空")
                 mailbox.prep_input_mails(mfgs[0], use_pinned_buffers=True)
                 self.mfgs = mfgs
-                # print("此时的mfgs", mfgs)
+                # print("444mfgs为", mfgs)
                 self.root = self.my_root[0]
                 self.ts = self.my_ts[0]
                 self.eid = self.my_eid[0]
@@ -328,22 +336,28 @@ if args.local_rank < args.num_gpus:
                 # 获取之前线程的读取结果mfgs
                 mfgs = prev_thread.get_mfgs()
                 # print("woc: ", mfgs)
-                # print("读取到的mfgs为", mfgs)
+                # print("555mfgs为", mfgs)
                 # 进入训练模式开始训练
                 # time_train_tmp = time.time()
                 model.train()
+                # print(111)
                 optimizer.zero_grad()
+                # print(222)
                 # print("woc2: ", mfgs)
                 pred_pos, pred_neg = model(mfgs)
+                # print(333)
                 loss = creterion(pred_pos, torch.ones_like(pred_pos))
                 loss += creterion(pred_neg, torch.zeros_like(pred_neg))
+                # print(444)
                 loss.backward()
                 optimizer.step()
+                # print(555)
                 # time_train = time.time() - time_train_tmp
                 # torch.distributed.gather_object(float(time_train), None, dst=args.num_gpus)
                 with torch.no_grad():
                     tot_loss += float(loss)
                 # 训练完之后更新一下mailbox和memory
+                # print(666)
                 if mailbox is not None:
                     with torch.no_grad():
                         eid = prev_thread.get_eid()
@@ -358,10 +372,16 @@ if args.local_rank < args.num_gpus:
                                               model.module.memory_updater.last_updated_memory,
                                               root_nodes,
                                               model.module.memory_updater.last_updated_ts)
+                        # print(888)
                         if memory_param['deliver_to'] == 'neighbors':
-                            torch.distributed.barrier()
+                            # print(999)
+                            torch.distributed.barrier(group=nccl_group)
+                            # print(101010)
                             if args.local_rank == 0:
+                                # print(111111)
                                 mailbox.update_next_mail_pos()
+                                # print(121212)
+                # print(999)
                 prev_thread = curr_thread
             else:
                 my_mfgs = [None]
@@ -381,7 +401,7 @@ if args.local_rank < args.num_gpus:
                 multi_block = [None] * (all_proc + 1)
                 # 获取mfgs
                 torch.distributed.scatter_object_list(my_mfgs, multi_mfgs, src=args.num_gpus)
-                # print('2接收到数据，开始处理')
+                # print('111接收到数据，开始处理', my_mfgs)
                 if mailbox is not None:
                     torch.distributed.scatter_object_list(my_root, multi_root, src=args.num_gpus)
                     torch.distributed.scatter_object_list(my_ts, multi_ts, src=args.num_gpus)
@@ -430,7 +450,7 @@ if args.local_rank < args.num_gpus:
                                               root_nodes,
                                               model.module.memory_updater.last_updated_ts)
                         if memory_param['deliver_to'] == 'neighbors':
-                            torch.distributed.barrier()
+                            torch.distributed.barrier(group=nccl_group)
                             if args.local_rank == 0:
                                 mailbox.update_next_mail_pos()
                 prev_thread = None
@@ -479,7 +499,7 @@ if args.local_rank < args.num_gpus:
                                           root_nodes,
                                           model.module.memory_updater.last_updated_ts)
                     if memory_param['deliver_to'] == 'neighbors':
-                        torch.distributed.barrier()
+                        torch.distributed.barrier(group=nccl_group)
                         if args.local_rank == 0:
                             mailbox.update_next_mail_pos()
                 y_pred = torch.cat([pred_pos, pred_neg], dim=0).sigmoid().cpu()

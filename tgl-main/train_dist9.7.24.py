@@ -44,7 +44,7 @@ echo 3 > /proc/sys/vm/drop_caches
 
 ./clear.sh
 lsof -i:34567
-./run.sh GDELT
+./2run.sh GDELT
 
 改版自->双机TGL原版(6.8.14)
 修改了内存使用情况，允许双机启动

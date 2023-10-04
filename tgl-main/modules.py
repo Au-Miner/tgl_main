@@ -26,13 +26,19 @@ class GeneralModel(torch.nn.Module):
             else:
                 raise NotImplementedError
             self.dim_node_input = memory_param['dim_out']
+            print("self.dim_node_input", self.dim_node_input)
+            print("self.dim_node_input", self.dim_node_input)
+            print("self.dim_node_input", self.dim_node_input)
+            print("self.dim_node_input", self.dim_node_input)
         self.layers = torch.nn.ModuleDict()
         # 将layers保存为gnn_param['layer']*sample_param['history']个TransfomerAttentionLayer层
         if gnn_param['arch'] == 'transformer_attention':
             for h in range(sample_param['history']):
+                # print("创建了第 0 层第", h, "块")
                 self.layers['l0h' + str(h)] = TransfomerAttentionLayer(self.dim_node_input, dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], combined=combined)
             for l in range(1, gnn_param['layer']):
                 for h in range(sample_param['history']):
+                    # print("创建了第", l, "层第", h, "块")
                     self.layers['l' + str(l) + 'h' + str(h)] = TransfomerAttentionLayer(gnn_param['dim_out'], dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], combined=False)
         elif gnn_param['arch'] == 'identity':
             self.gnn_param['layer'] = 1
@@ -54,6 +60,12 @@ class GeneralModel(torch.nn.Module):
         for l in range(self.gnn_param['layer']):
             for h in range(self.sample_param['history']):
                 # 对第[l,h]层layer传入mfgs[l][h]进行训练
+                # print("读取第", l, "层第", h, "块layer进行训练")
+                # print("layer is None? ", self.layers['l' + str(l) + 'h' + str(h)] is None)
+                # print(len(mfgs))
+                # print(len(mfgs[0]))
+                # print(mfgs[l][h])
+                # print("============")
                 rst = self.layers['l' + str(l) + 'h' + str(h)](mfgs[l][h])
                 if 'time_transform' in self.gnn_param and self.gnn_param['time_transform'] == 'JODIE':
                     rst = self.layers['l0h' + str(h) + 't'](rst, mfgs[l][h].srcdata['mem_ts'], mfgs[l][h].srcdata['ts'])
