@@ -26,10 +26,6 @@ class GeneralModel(torch.nn.Module):
             else:
                 raise NotImplementedError
             self.dim_node_input = memory_param['dim_out']
-            print("self.dim_node_input", self.dim_node_input)
-            print("self.dim_node_input", self.dim_node_input)
-            print("self.dim_node_input", self.dim_node_input)
-            print("self.dim_node_input", self.dim_node_input)
         self.layers = torch.nn.ModuleDict()
         # 将layers保存为gnn_param['layer']*sample_param['history']个TransfomerAttentionLayer层
         if gnn_param['arch'] == 'transformer_attention':

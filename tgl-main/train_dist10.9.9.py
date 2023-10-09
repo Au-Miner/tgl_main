@@ -1,5 +1,4 @@
 import argparse
-import logging
 import os
 import time
 
@@ -11,20 +10,10 @@ parser.add_argument('--seed', type=int, default=0, help='random seed to use')
 parser.add_argument('--num_gpus', type=int, default=4, help='number of gpus to use')
 parser.add_argument('--omp_num_threads', type=int, default=8)
 parser.add_argument("--local_rank", type=int, default=-1)
-parser.add_argument("--logging", type=str, default='warning')
 args = parser.parse_args()
 
 '''
-    export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1 
-    python -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 --master_addr="10.214.151.197" \
---master_port=34567 train_dist2.py --data WIKI --config config/TGN.yml --num_gpus=1
-
-    export NCCL_SOCKET_IFNAME=em2,^em1,^br-6ca3f947e6e4 
-    python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 --master_addr="10.214.151.197" \
---master_port=34567 train_dist2.py --data WIKI --config config/TGN.yml --num_gpus=1
-
 双机tgl原版
-实现了单机存特征，外机拉特征
 '''
 
 # set which GPU to use
@@ -37,8 +26,7 @@ else:
 os.environ['OMP_NUM_THREADS'] = str(args.omp_num_threads)
 os.environ['MKL_NUM_THREADS'] = str(args.omp_num_threads)
 
-if args.logging == 'info':
-    logging.basicConfig(level=logging.INFO)
+
 
 import torch
 import dgl
@@ -53,7 +41,6 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from modules import *
 from sampler import *
 from utils import *
-from kvstore import *
 
 
 def set_seed(seed):
@@ -70,44 +57,65 @@ lis_sample_time = []
 lis_train_time = []
 
 set_seed(args.seed)
-torch.distributed.init_process_group(backend='gloo', timeout=datetime.timedelta(0, 3600000), init_method='env://')
+torch.distributed.init_process_group(backend='gloo', timeout=datetime.timedelta(0, 3600), init_method='env://')
 # 注意这里group定义
-ranks = [0]
-for i in range(torch.distributed.get_world_size() - 2):
-    ranks.append(i + 2)
-all_proc = torch.distributed.get_world_size() - 1
-print(f'ranks: {ranks}, all_proc: {all_proc}')
+ranks = [0, 2, 3, 4]
+all_proc = 4
 # nccl_group = torch.distributed.new_group(ranks=list(range(args.num_gpus)), backend='nccl')
 nccl_group = torch.distributed.new_group(ranks=ranks, backend='nccl')
 
-
-
 # local_rank范围从[0, num_gpus]，其中num_gpus为cpu执行
-logging.info("定义feats")
-node_feats, edge_feats = None, None
-kvstore = None
-dim_feats = [0, 0, 0, 0, 0, 0, False, False]
-if torch.distributed.get_rank() == 0:
-    logging.info("rank0读取feats")
-    node_feats, edge_feats = load_feat(args.data)
-logging.info("创建kvstore")
-kvstore = KVstore(node_feats, edge_feats, torch.distributed.get_rank(), torch.distributed.get_world_size())
-set_rank(torch.distributed.get_rank())
-set_kvstore(kvstore)
-if torch.distributed.get_rank() == 0:
-    dim_feats = kvstore.dim_feats
+if args.local_rank == 0:
+    # 加载点特征和边特征
+    _node_feats, _edge_feats = load_feat(args.data)
+dim_feats = [0, 0, 0, 0, 0, 0]
+# 对于第1个GPU创建共享变量
+if args.local_rank == 0:
+    # print("准备开始读取节点特征和边特征")
+    if _node_feats is not None:
+        # 创建内存共享节点/边特征变量node_feats和edge_feats
+        # dim_feats[0]表示节点个数，dim_feats[1]表示节点dim，dim_feats[2]表示节点类型
+        dim_feats[0] = _node_feats.shape[0]
+        dim_feats[1] = _node_feats.shape[1]
+        dim_feats[2] = _node_feats.dtype
+        node_feats = create_shared_mem_array('node_feats', _node_feats.shape, dtype=_node_feats.dtype)
+        # node_feats = create_shared_mem_array('node_feats', _node_feats.shape, dtype=torch.float32)
+        node_feats.copy_(_node_feats)
+        # print("正在读取节点特征，节点特征总共有", _node_feats.size())
+        del _node_feats
+    else:
+        node_feats = None
+    if _edge_feats is not None:
+        # print("woc: ", _edge_feats.dtype)
+        # print("woc: ", _edge_feats.shape[0])
+        # print("woc: ", _edge_feats.shape[1])
+        # print("woc: ", _edge_feats.dtype)
+        # print(args.local_rank, "===111")
+        dim_feats[3] = _edge_feats.shape[0]
+        dim_feats[4] = _edge_feats.shape[1]
+        dim_feats[5] = _edge_feats.dtype
+        edge_feats = create_shared_mem_array('edge_feats', _edge_feats.shape, dtype=_edge_feats.dtype)
+        # edge_feats = create_shared_mem_array('edge_feats', _edge_feats.shape, dtype=torch.float32)
+        # print(args.local_rank, "===222")
+        edge_feats.copy_(_edge_feats)
+        # print("正在读取边特征，边特征总共有", _edge_feats.size())
+        del _edge_feats
+    else:
+        edge_feats = None
+# 进程第一次同步，保证edge_feats和node_feats被移动到内存中
+# print(args.local_rank, "===333")
 torch.distributed.barrier()
-logging.info(f"dim_feats: {dim_feats}")
-logging.info("分发dim_feats")
+# print(args.local_rank, "===444")
 torch.distributed.broadcast_object_list(dim_feats, src=0)
-node_feats_not_None = dim_feats[6]
-edge_feats_not_None = dim_feats[7]
-logging.info(f"dim_feats: {dim_feats}")
-
-
-
-
-
+# print(args.local_rank, "===555")
+# 其他gpu进程从内存中读取edge_feats和node_feats
+if args.local_rank > 0 and args.local_rank < args.num_gpus:
+    node_feats = None
+    edge_feats = None
+    if os.path.exists('/home/qcsun/DATA/{}/node_features.pt'.format(args.data)):
+        node_feats = get_shared_mem_array('node_feats', (dim_feats[0], dim_feats[1]), dtype=dim_feats[2])
+    if os.path.exists('/home/qcsun/DATA/{}/edge_features.pt'.format(args.data)):
+        edge_feats = get_shared_mem_array('edge_feats', (dim_feats[3], dim_feats[4]), dtype=dim_feats[5])
 sample_param, memory_param, gnn_param, train_param = parse_config(args.config)
 orig_batch_size = train_param['batch_size']
 # 定义模型存储路径
@@ -119,6 +127,12 @@ else:
     path_saver = [None]
 torch.distributed.broadcast_object_list(path_saver, src=0)
 path_saver = path_saver[0]
+
+print("dim_node", dim_feats[1])
+print("dim_node", dim_feats[1])
+print("dim_node", dim_feats[1])
+print("dim_node", dim_feats[1])
+
 # 如果是最后一个进程，即CPU进程，则获取图信息g和所有边信息df
 if args.local_rank == args.num_gpus:
     g, df = load_graph(args.data)
@@ -185,12 +199,10 @@ class DataPipelineThread(threading.Thread):
     def run(self):
         with torch.cuda.stream(self.stream):
             # print(args.local_rank, 'start thread')
-            nids, eids = get_ids(self.my_mfgs[0], node_feats_not_None, edge_feats_not_None)
+            nids, eids = get_ids(self.my_mfgs[0], node_feats, edge_feats)
             mfgs = mfgs_to_cuda(self.my_mfgs[0])
-            # print("线程创建开始读到的mfgs为", mfgs)
-            logging.info(f"node_feats_not_None: {node_feats_not_None}")
-            logging.info(f"edge_feats_not_None: {edge_feats_not_None}")
-            prepare_input(mfgs, node_feats_not_None, edge_feats_not_None, pinned=True, nfeat_buffs=pinned_nfeat_buffs,
+            # print("222mfgs为", mfgs)
+            prepare_input(mfgs, node_feats, edge_feats, pinned=True, nfeat_buffs=pinned_nfeat_buffs,
                           efeat_buffs=pinned_efeat_buffs, nids=nids, eids=eids)
             # print("333mfgs为", mfgs)
             self.mfgs = mfgs
@@ -239,8 +251,8 @@ if args.local_rank < args.num_gpus:
     # 创建优化器
     optimizer = torch.optim.Adam(model.parameters(), lr=train_param['lr'])
     # 定义采样点/边固定缓冲区（大小为[n/e limit, n/e dim]）
-    pinned_nfeat_buffs, pinned_efeat_buffs = get_pinned_buffers(sample_param, train_param['batch_size'], node_feats_not_None, dim_feats[1],
-                                                                edge_feats_not_None, dim_feats[4])
+    pinned_nfeat_buffs, pinned_efeat_buffs = get_pinned_buffers(sample_param, train_param['batch_size'], node_feats,
+                                                                edge_feats)
     if mailbox is not None:
         mailbox.allocate_pinned_memory_buffers(sample_param, train_param['batch_size'])
     tot_loss = 0
@@ -332,8 +344,7 @@ if args.local_rank < args.num_gpus:
                 if mailbox is not None:
                     with torch.no_grad():
                         eid = prev_thread.get_eid()
-                        mem_edge_feats = pull_remote(eid, 'edge', get_rank()) if edge_feats_not_None else None
-                        # mem_edge_feats = edge_feats[eid] if edge_feats is not None else None
+                        mem_edge_feats = edge_feats[eid] if edge_feats is not None else None
                         root_nodes = prev_thread.get_root()
                         ts = prev_thread.get_ts()
                         block = prev_thread.get_block()
@@ -410,8 +421,7 @@ if args.local_rank < args.num_gpus:
                 if mailbox is not None:
                     with torch.no_grad():
                         eid = prev_thread.get_eid()
-                        mem_edge_feats = pull_remote(eid, 'edge', get_rank()) if edge_feats_not_None else None
-                        # mem_edge_feats = edge_feats[eid] if edge_feats is not None else None
+                        mem_edge_feats = edge_feats[eid] if edge_feats is not None else None
                         root_nodes = prev_thread.get_root()
                         ts = prev_thread.get_ts()
                         block = prev_thread.get_block()
@@ -433,9 +443,7 @@ if args.local_rank < args.num_gpus:
             multi_mfgs = [None] * (all_proc + 1)
             torch.distributed.scatter_object_list(my_mfgs, multi_mfgs, src=args.num_gpus)
             mfgs = mfgs_to_cuda(my_mfgs[0])
-            logging.info(f"node_feats_not_None: {node_feats_not_None}")
-            logging.info(f"edge_feats_not_None: {edge_feats_not_None}")
-            prepare_input(mfgs, node_feats_not_None, edge_feats_not_None, pinned=True, nfeat_buffs=pinned_nfeat_buffs,
+            prepare_input(mfgs, node_feats, edge_feats, pinned=True, nfeat_buffs=pinned_nfeat_buffs,
                           efeat_buffs=pinned_efeat_buffs)
             model.eval()
             with torch.no_grad():
@@ -456,8 +464,7 @@ if args.local_rank < args.num_gpus:
                     torch.distributed.scatter_object_list(my_ts, multi_ts, src=args.num_gpus)
                     torch.distributed.scatter_object_list(my_eid, multi_eid, src=args.num_gpus)
                     eid = my_eid[0]
-                    mem_edge_feats = pull_remote(eid, 'edge', get_rank()) if edge_feats_not_None else None
-                    # mem_edge_feats = edge_feats[eid] if edge_feats is not None else None
+                    mem_edge_feats = edge_feats[eid] if edge_feats is not None else None
                     root_nodes = my_root[0]
                     ts = my_ts[0]
                     block = None

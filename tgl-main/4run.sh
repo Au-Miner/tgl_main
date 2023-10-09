@@ -3,7 +3,7 @@
 
 
 # 检查端口是否被占用
-PORT=11081
+PORT=34567
 PID=$(lsof -t -i:$PORT)
 # 如果端口被占用
 if [[ ! -z $PID ]]; then

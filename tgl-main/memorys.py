@@ -69,7 +69,7 @@ class MailBox():
             # print("self.node_moemry.shape: ", self.node_memory.shape)
             device = torch.device('cpu')
 
-            print("self.mailbox.shape", self.mailbox.shape)
+            # print("self.mailbox.shape", self.mailbox.shape)
             b.srcdata['mem'] = self.node_memory[b.srcdata['ID'].long().to(device)].cuda()
             b.srcdata['mem_ts'] = self.node_memory_ts[b.srcdata['ID'].long().to(device)].cuda()
             b.srcdata['mem_input'] = self.mailbox[b.srcdata['ID'].long().to(device)].cuda().reshape(b.srcdata['ID'].shape[0], -1)
@@ -270,18 +270,18 @@ class TransformerMemoryUpdater(torch.nn.Module):
 
     def forward(self, mfg):
         for b in mfg:
-            print("=============")
+            # print("=============")
             # print(self.memory_param['mailbox_size'])
             Q = self.w_q(b.srcdata['mem']).reshape((b.num_src_nodes(), self.att_h, -1))
             mails = b.srcdata['mem_input'].reshape((b.num_src_nodes(), self.memory_param['mailbox_size'], -1))
-            print(mails.shape)
+            # print(mails.shape)
             if self.dim_time > 0:
-                print(b.srcdata['mail_ts'].shape)
-                print(self.time_enc(b.srcdata['ts'][:, None] - b.srcdata['mail_ts']).shape)
+                # print(b.srcdata['mail_ts'].shape)
+                # print(self.time_enc(b.srcdata['ts'][:, None] - b.srcdata['mail_ts']).shape)
                 time_feat = self.time_enc(b.srcdata['ts'][:, None] - b.srcdata['mail_ts']).reshape((b.num_src_nodes(), self.memory_param['mailbox_size'], -1))
-                print(time_feat.shape)
+                # print(time_feat.shape)
                 mails = torch.cat([mails, time_feat], dim=2)
-            print(mails.shape)
+            # print(mails.shape)
             K = self.w_k(mails).reshape((b.num_src_nodes(), self.memory_param['mailbox_size'], self.att_h, -1))
             V = self.w_v(mails).reshape((b.num_src_nodes(), self.memory_param['mailbox_size'], self.att_h, -1))
             att = self.att_act((Q[:,None,:,:]*K).sum(dim=3))
@@ -296,7 +296,7 @@ class TransformerMemoryUpdater(torch.nn.Module):
             rst = torch.nn.functional.relu(rst)
             b.srcdata['h'] = rst
 
-            print("woc", b.srcdata['h'].shape)
+            # print("woc", b.srcdata['h'].shape)
             # 这里的last_updated_nid是采样的所有节点
             # last_updated_memory是h^l_i(t)
             self.last_updated_memory = rst.detach().clone()

@@ -1,4 +1,29 @@
 #!/bin/bash
+# running in 4 nodes: 191,192,197,198
+
+
+# 检查端口是否被占用
+PORT=34567
+PID=$(lsof -t -i:$PORT)
+# 如果端口被占用
+if [[ ! -z $PID ]]; then
+    echo "Port $PORT is in use by PID $PID. Terminating..."
+    kill -9 $PID
+    if [ $? -eq 0 ]; then
+        echo "Successfully terminated process $PID."
+    else
+        echo "Failed to terminate process $PID. Exiting..."
+        exit 1
+    fi
+else
+    echo "Port $PORT is not in use."
+fi
+
+
+
+# 杀死正在使用 NVIDIA 设备文件的所有进程
+echo "清除无关进程 释放端口"
+fuser -v /dev/nvidia* | awk '{for(i=1;i<=NF;i++)print "kill -9 " $i;}' | sh
 
 
 
@@ -9,31 +34,34 @@ rm -rf /dev/shm/node_memory_ts /dev/shm/edge_feats /dev/shm/update_mail_pos
 echo "查看当前内存"
 free -m
 
-echo "查看当前ip地址"
-ip_addrs=$(ip addr)
-target_line=$(echo "$ip_addrs" | grep 'inet 10.214.151.191')
-ip_addr=$(echo "$target_line" | grep -oP 'inet \K[\d.]+')
+ip_addr=$(hostname -I | awk '{print $1}')
+echo "抓取到的当前地址: $ip_addr"
 
 
-if [ "$ip_addr" = "10.214.151.191" ]; then
-    echo "ip为node191"
-    echo "准备分发文件"
-    rsync -avz /home/qcsun/wql_tgl/tgl-main qcsun@node192:/home/qcsun/wql_tgl
-    echo "切换conda环境"
-    source /home/qcsun/anaconda3/etc/profile.d/conda.sh
-    conda activate tgl
+TARGET_IPS=("10.214.151.191" "10.214.151.192")
+
+activate_and_run() {
+    source $1/etc/profile.d/conda.sh
+    conda activate $2
     echo "准备启动项目"
-    export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
-    python -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 --master_addr="10.214.151.191" \
-    --master_port=34567 train_dist2.py --data $1 --config config/TGN.yml --num_gpus=1
+    python -m torch.distributed.launch --nproc_per_node=$3 --nnodes=2 --node_rank=$4 --master_addr="10.214.151.191" \
+    --master_port=34567 train_dist2.py --data $5 --config config/$6.yml --num_gpus=1
+}
 
-else
-    echo "ip为node192"
-    echo "切换conda环境"
-    source /home/qcsun/anaconda3/etc/profile.d/conda.sh
-    conda activate tgl
-    echo "准备启动项目"
-    export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
-    python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=1 --master_addr="10.214.151.191" \
-    --master_port=34567 train_dist2.py --data $1 --config config/TGN.yml --num_gpus=1
-fi
+case "$ip_addr" in
+    "10.214.151.191")
+        echo "ip为node191"
+        echo "准备分发文件"
+        for ip in "${TARGET_IPS[@]}"; do
+            rsync -avz --force /home/qcsun/wql_tgl/tgl-main qcsun@$ip:/home/qcsun/wql_tgl
+        done
+        export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
+        activate_and_run "/home/qcsun/anaconda3" "tgl" 2 0 $1 $2
+        ;;
+    *)
+        echo "ip为node192"
+        export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
+        activate_and_run "/home/qcsun/anaconda3" "tgl" 1 1 $1 $2
+        ;;
+esac
+
