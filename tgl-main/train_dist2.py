@@ -25,6 +25,13 @@ args = parser.parse_args()
 
 双机tgl原版
 实现了单机存特征，外机拉特征
+
+sudo systemctl status firewalld
+
+sudo systemctl stop firewalld
+
+sudo systemctl start firewalld
+sudo systemctl restart fail2ban
 '''
 
 # set which GPU to use
@@ -79,6 +86,7 @@ all_proc = torch.distributed.get_world_size() - 1
 print(f'ranks: {ranks}, all_proc: {all_proc}')
 # nccl_group = torch.distributed.new_group(ranks=list(range(args.num_gpus)), backend='nccl')
 nccl_group = torch.distributed.new_group(ranks=ranks, backend='nccl')
+
 
 
 
@@ -595,6 +603,7 @@ else:
     tap = 0
     tauc = 0
     # 开始epoch轮训练
+    wql_total_time = 0
     for e in range(train_param['epoch']):
         t_tot_s2 = time.time()
         mark = 0
@@ -705,6 +714,7 @@ else:
                 pbar.update(1)
             time_tot += time.time() - t_tot_s2
             print('Total time:', time_tot)
+            wql_total_time += time_tot
             print('Training time:', time_train)
             # 设置模型状态为5，开始收集损失值
             # model_state = [5] * (args.num_gpus + 1)
@@ -730,6 +740,7 @@ else:
                 # for memory based models, testing after validation is faster
                 # 获取交叉验证集更好结果状态下的测试集结果
                 tap, tauc = eval('test')
+                print("目前最好的test结果tap为", tap, " tauc为", tauc)
         # wql add here(计算所有时间):
         print('\ttrain loss:{:.4f}  val ap:{:4f}  val auc:{:4f}'.format(total_loss, ap, auc))
         print('\ttotal time:{:.2f}s sample time:{:.2f}s train time:{:.2f}s'.format(time_tot, time_sample, time_train))
@@ -767,3 +778,4 @@ else:
     print("-----------------")
     for tmp in lis_train_time:
         print(tmp)
+    print("the mean total time is", wql_total_time / 100)

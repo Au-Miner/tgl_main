@@ -17,7 +17,7 @@ args=parser.parse_args()
 '''
 python train_node.py --data REDDIT --config /home/qcsun/tgl-main/config/TGN.yml --model /home/qcsun/wql_tgl/tgl-main/models/REDDIT_TGN.pkl
 
-python train_node.py --data WIKI --config /home/qcsun/tgl-main/config/TGN.yml --model /home/qcsun/wql_tgl/tgl-main/models/WIKI_TGN.pkl
+python train_node.py --data WIKI --config /home/qcsun/wql_tgl/tgl-main/config/TGN.yml --model /home/qcsun/wql_tgl/tgl-main/models/WIKI_TGN.pkl
 
 python train_node.py --data GDELT --config /home/qcsun/tgl-main/config/TGN.yml --model /home/qcsun/wql_tgl/tgl-main/models/GDELT_TGN.pkl
 

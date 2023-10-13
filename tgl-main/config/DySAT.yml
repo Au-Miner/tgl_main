@@ -19,8 +19,8 @@ gnn:
     dim_out: 100
     combine: 'rnn'
 train:
-  - epoch: 50
-    batch_size: 600
+  - epoch: 100
+    batch_size: 4000
     lr: 0.0001
     dropout: 0.1
     att_dropout: 0.1

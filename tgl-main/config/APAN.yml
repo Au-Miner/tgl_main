@@ -22,7 +22,7 @@ gnn:
   - arch: 'identity'
 train:
   - epoch: 100
-    batch_size: 600
+    batch_size: 4000
     lr: 0.0001
     dropout: 0.1
     att_dropout: 0.1
