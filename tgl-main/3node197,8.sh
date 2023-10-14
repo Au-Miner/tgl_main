@@ -38,33 +38,36 @@ ip_addr=$(hostname -I | awk '{print $1}')
 echo "抓取到的当前地址: $ip_addr"
 
 
-TARGET_IPS=("10.214.151.191" "10.214.151.192")
+TARGET_IPS=("10.214.151.198")
 
 activate_and_run() {
     source $1/etc/profile.d/conda.sh
     conda activate $2
     echo "准备启动项目"
-    python -m torch.distributed.launch --nproc_per_node=$3 --nnodes=2 --node_rank=$4 --master_addr="10.214.151.191" \
-    --master_port=34567 train_dist2.py --data $5 --config config/$6.yml --num_gpus=1
+    python -m torch.distributed.launch --nproc_per_node=1 --nnodes=2 --node_rank=$3 --master_addr="10.214.151.197" \
+    --master_port=34567 train_node.py \
+    --config /home/qcsun/wql_tgl/tgl-main/config/$5.yml \
+    --model /home/qcsun/wql_tgl/tgl-main/models/$4_$5.pkl \
+    --data $4
 }
 
 case "$ip_addr" in
-    "10.214.151.191")
-        echo "ip为node191"
+    "10.214.151.197")
+        echo "ip为node197"
         echo "准备分发文件"
         #rsync -avz /home/qcsun/wql2_dtgl/dtgl_main/ qcsun@node191:/home/qcsun/wql2_dtgl/dtgl_main/
 
         for ip in "${TARGET_IPS[@]}"; do
-            rsync -avz --force /home/qcsun/wql_tgl/tgl-main qcsun@$ip:/home/qcsun/wql_tgl
+            rsync -avz --force /home/qcsun/wql_tgl/tgl-main2 qcsun@$ip:/home/qcsun/wql_tgl
         done
 
         export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
-        activate_and_run "/home/qcsun/anaconda3" "tgl" 2 0 $1 $2
+        activate_and_run "/home/qcsun/anaconda3" "tgl" 0 $1 $2
         ;;
     *)
-        echo "ip为node192"
+        echo "ip为node198"
         export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
-        activate_and_run "/home/qcsun/anaconda3" "tgl" 1 1 $1 $2
+        activate_and_run "/home/qcsun/anaconda3" "tgl" 1 $1 $2
         ;;
 esac
 
