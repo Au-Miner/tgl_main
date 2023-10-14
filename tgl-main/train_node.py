@@ -1,4 +1,6 @@
 import argparse
+import datetime
+import logging
 import os
 import hashlib
 
@@ -12,6 +14,13 @@ parser.add_argument('--lr', type=float, default=0.001)
 parser.add_argument('--gpu', type=str, default='0', help='which GPU to use')
 parser.add_argument('--model', type=str, default='', help='name of stored model to load')
 parser.add_argument('--posneg', default=False, action='store_true', help='for positive negative detection, whether to sample negative nodes')
+
+
+# wql add
+parser.add_argument("--local_rank", type=int, default=-1)
+parser.add_argument('--seed', type=int, default=0, help='random seed to use')
+
+
 args=parser.parse_args()
 
 '''
@@ -21,6 +30,11 @@ python train_node.py --data WIKI --config /home/qcsun/wql_tgl/tgl-main/config/TG
 
 python train_node.py --data GDELT --config /home/qcsun/tgl-main/config/TGN.yml --model /home/qcsun/wql_tgl/tgl-main/models/GDELT_TGN.pkl
 
+    python -m torch.distributed.launch --nproc_per_node=1 --nnodes=1 --node_rank=0 --master_addr="10.214.151.197" \
+    --master_port=34567 train_node.py \
+    --config /home/qcsun/wql_tgl/tgl-main/config/TGN.yml \
+    --model /home/qcsun/wql_tgl/tgl-main/models/WIKI_TGN.pkl \
+    --data WIKI
 '''
 
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -38,6 +52,8 @@ from sampler import *
 from utils import *
 from tqdm import tqdm
 from sklearn.metrics import average_precision_score, f1_score
+from kvstore import *
+
 
 ldf = pd.read_csv('/home/qcsun/DATA/{}/labels.csv'.format(args.data))
 role = ldf['ext_roll'].values
@@ -49,31 +65,89 @@ emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device
 if not os.path.isdir('embs'):
     os.mkdir('embs')
 
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+set_seed(args.seed)
+torch.distributed.init_process_group(backend='gloo', timeout=datetime.timedelta(0, 3600000), init_method='env://')
+# 注意这里group定义
+ranks = [0]
+for i in range(torch.distributed.get_world_size() - 2):
+    ranks.append(i + 2)
+all_proc = torch.distributed.get_world_size() - 1
+print(f'ranks: {ranks}, all_proc: {all_proc}')
+nccl_group = torch.distributed.new_group(ranks=ranks, backend='nccl')
+
+
+
 # 单GPU走if，多GPU走else
 # if not os.path.isfile('embs/' + emb_file_name):
 if True:
     print('Generating temporal embeddings..')
 
-    node_feats, edge_feats = load_feat(args.data)
+
+
+
+    # node_feats, edge_feats = load_feat(args.data)
+    # local_rank范围从[0, num_gpus]，其中num_gpus为cpu执行
+    logging.info("定义feats")
+    node_feats, edge_feats = None, None
+    kvstore = None
+    dim_feats = [0, 0, 0, 0, 0, 0, False, False]
+    if torch.distributed.get_rank() == 0:
+        logging.info("rank0读取feats")
+        node_feats, edge_feats = load_feat(args.data)
+    logging.info("创建kvstore")
+    kvstore = KVstore(node_feats, edge_feats, torch.distributed.get_rank(), torch.distributed.get_world_size())
+    set_rank(torch.distributed.get_rank())
+    set_kvstore(kvstore)
+    if torch.distributed.get_rank() == 0:
+        dim_feats = kvstore.dim_feats
+    torch.distributed.barrier()
+    logging.info(f"dim_feats: {dim_feats}")
+    logging.info("分发dim_feats")
+    torch.distributed.broadcast_object_list(dim_feats, src=0)
+    node_feats_not_None = dim_feats[6]
+    edge_feats_not_None = dim_feats[7]
+    logging.info(f"dim_feats: {dim_feats}")
+
+
+
+
+
+
     g, df = load_graph(args.data)
     sample_param, memory_param, gnn_param, train_param = parse_config(args.config)
     train_edge_end = df[df['ext_roll'].gt(0)].index[0]
     val_edge_end = df[df['ext_roll'].gt(1)].index[0]
 
-    gnn_dim_node = 0 if node_feats is None else node_feats.shape[1]
-    gnn_dim_edge = 0 if edge_feats is None else edge_feats.shape[1]
-    combine_first = False
-    if 'combine_neighs' in train_param and train_param['combine_neighs']:
-        combine_first = True
-    model = GeneralModel(gnn_dim_node, gnn_dim_edge, sample_param, memory_param, gnn_param, train_param, combined=combine_first).cuda()
-    mailbox = MailBox(memory_param, g['indptr'].shape[0] - 1, gnn_dim_edge) if memory_param['type'] != 'none' else None
+    model = GeneralModel(dim_feats[1], dim_feats[4], sample_param, memory_param, gnn_param, train_param).cuda()
+    print("wocaoleee: ", model.memory_updater)
+    print("wocaoleee: ", model.memory_updater)
+    print("wocaoleee: ", model.memory_updater)
+
+
+    find_unused_parameters = True if sample_param['history'] > 1 else False
+    # 将其设置为分布式模型
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], process_group=nccl_group,
+                                                      output_device=args.local_rank,
+                                                      find_unused_parameters=find_unused_parameters)
+
+
+    mailbox = MailBox(memory_param, g['indptr'].shape[0] - 1, dim_feats[4]) if memory_param['type'] != 'none' else None
     creterion = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=train_param['lr'])
     if 'all_on_gpu' in train_param and train_param['all_on_gpu']:
-        if node_feats is not None:
-            node_feats = node_feats.cuda()
-        if edge_feats is not None:
-            edge_feats = edge_feats.cuda()
+        # if node_feats is not None:
+        #     node_feats = node_feats.cuda()
+        # if edge_feats is not None:
+        #     edge_feats = edge_feats.cuda()
         if mailbox is not None:
             mailbox.move_to_gpu()
 
@@ -112,14 +186,15 @@ if True:
                 mfgs = to_dgl_blocks(ret, sample_param['history'])
             else:
                 mfgs = node_to_dgl_blocks(root_nodes, ts)
-            mfgs = prepare_input(mfgs, node_feats, edge_feats, combine_first=combine_first)
+            mfgs = prepare_input(mfgs, node_feats_not_None, edge_feats_not_None)
             if mailbox is not None:
                 mailbox.prep_input_mails(mfgs[0])
             with torch.no_grad():
                 pred_pos, pred_neg = model(mfgs)
                 if mailbox is not None:
                     eid = rows['Unnamed: 0'].values
-                    mem_edge_feats = edge_feats[eid] if edge_feats is not None else None
+                    mem_edge_feats = pull_remote(eid, 'edge', get_rank()) if edge_feats_not_None else None
+                    # mem_edge_feats = edge_feats[eid] if edge_feats is not None else None
                     block = None
                     if memory_param['deliver_to'] == 'neighbors':
                         block = to_dgl_blocks(ret, sample_param['history'], reverse=True)[0][0]
@@ -141,7 +216,7 @@ if True:
             mfgs = to_dgl_blocks(ret, sample_param['history'])
         else:
             mfgs = node_to_dgl_blocks(root_nodes, ts)
-        mfgs = prepare_input(mfgs, node_feats, edge_feats, combine_first=combine_first)
+        mfgs = prepare_input(mfgs, node_feats_not_None, edge_feats_not_None, combine_first=combine_first)
         if mailbox is not None:
             mailbox.prep_input_mails(mfgs[0])
         with torch.no_grad():
@@ -159,6 +234,15 @@ else:
     emb = torch.load('embs/' + emb_file_name)
 
 model = NodeClassificationModel(emb.shape[1], args.dim, labels.max() + 1).cuda()
+
+
+find_unused_parameters = True if sample_param['history'] > 1 else False
+# 将其设置为分布式模型
+model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], process_group=nccl_group,
+                                                  output_device=args.local_rank,
+                                                  find_unused_parameters=find_unused_parameters)
+
+
 loss_fn = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 labels = torch.from_numpy(labels).type(torch.int32)

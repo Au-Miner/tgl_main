@@ -69,12 +69,14 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+
 all_total_time = 0
 all_sample_time = 0
 all_train_time = 0
 lis_total_time = []
 lis_sample_time = []
 lis_train_time = []
+
 
 set_seed(args.seed)
 torch.distributed.init_process_group(backend='gloo', timeout=datetime.timedelta(0, 3600000), init_method='env://')

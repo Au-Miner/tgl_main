@@ -42,7 +42,7 @@ rm -rf /dev/shm/mails /dev/shm/mail_ts /dev/shm/next_mail_pos /dev/shm/node_memo
 rm -rf /dev/shm/node_memory_ts /dev/shm/edge_feats /dev/shm/update_mail_pos
 echo 3 > /proc/sys/vm/drop_caches
 
-./clear.sh
+./5draft.sh
 lsof -i:34567
 ./2run.sh GDELT
 
