@@ -32,6 +32,23 @@ sudo systemctl stop firewalld
 
 sudo systemctl start firewalld
 sudo systemctl restart fail2ban
+
+sudo firewall-cmd --zone=public --add-port=1000-65000/udp --permanent
+sudo firewall-cmd --zone=public --add-port=1000-65000/tcp --permanent
+sudo firewall-cmd --zone=public --remove-port=10000-65000/tcp --permanent
+sudo firewall-cmd --reload
+sudo firewall-cmd --permanent --list-port
+
+    export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
+        python -m torch.distributed.launch --nproc_per_node=2 --nnodes=3 --node_rank=0 --master_addr="10.214.151.191" \
+    --master_port=34567 train_dist2.py --data GDELT --config config/TGN.yml --num_gpus=1
+    export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
+        python -m torch.distributed.launch --nproc_per_node=1 --nnodes=3 --node_rank=1 --master_addr="10.214.151.191" \
+    --master_port=34567 train_dist2.py --data GDELT --config config/TGN.yml --num_gpus=1
+    export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
+        python -m torch.distributed.launch --nproc_per_node=1 --nnodes=3 --node_rank=2 --master_addr="10.214.151.191" \
+    --master_port=34567 train_dist2.py --data GDELT --config config/TGN.yml --num_gpus=1
+    
 '''
 
 # set which GPU to use
@@ -194,27 +211,21 @@ class DataPipelineThread(threading.Thread):
 
     def run(self):
         with torch.cuda.stream(self.stream):
-            # print(args.local_rank, 'start thread')
             nids, eids = get_ids(self.my_mfgs[0], node_feats_not_None, edge_feats_not_None)
             mfgs = mfgs_to_cuda(self.my_mfgs[0])
-            # print("线程创建开始读到的mfgs为", mfgs)
-            logging.info(f"node_feats_not_None: {node_feats_not_None}")
-            logging.info(f"edge_feats_not_None: {edge_feats_not_None}")
+            logging.info("准备开始prepare_input")
             prepare_input(mfgs, node_feats_not_None, edge_feats_not_None, pinned=True, nfeat_buffs=pinned_nfeat_buffs,
                           efeat_buffs=pinned_efeat_buffs, nids=nids, eids=eids)
-            # print("333mfgs为", mfgs)
+            logging.info("prepare_input结束")
             self.mfgs = mfgs
             if mailbox is not None:
-                # print("此时mailbox非空")
                 mailbox.prep_input_mails(mfgs[0], use_pinned_buffers=True)
                 self.mfgs = mfgs
-                # print("444mfgs为", mfgs)
                 self.root = self.my_root[0]
                 self.ts = self.my_ts[0]
                 self.eid = self.my_eid[0]
                 if memory_param['deliver_to'] == 'neighbors':
                     self.block = self.my_block[0]
-            # print(args.local_rank, 'finished')
 
     def get_stream(self):
         return self.stream
@@ -239,7 +250,8 @@ class DataPipelineThread(threading.Thread):
 if args.local_rank < args.num_gpus:
     # 创建模型
     model = GeneralModel(dim_feats[1], dim_feats[4], sample_param, memory_param, gnn_param, train_param).cuda()
-    find_unused_parameters = True if sample_param['history'] > 1 else False
+    # find_unused_parameters = True if sample_param['history'] > 1 else False
+    find_unused_parameters = True
     # 将其设置为分布式模型
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], process_group=nccl_group,
                                                       output_device=args.local_rank,
@@ -260,7 +272,9 @@ if args.local_rank < args.num_gpus:
         # model_state = [None] * (args.num_gpus + 1)
         model_state = [None] * (all_proc + 1)
         # 获取当前模型状态，因为非cpu进程，故model_state可以设置为None
+        logging.info("准备接收model_state")
         torch.distributed.scatter_object_list(my_model_state, model_state, src=args.num_gpus)
+        logging.info("接收到了model_state")
         if my_model_state[0] == -1:
             break
         elif my_model_state[0] == 4:
@@ -297,56 +311,62 @@ if args.local_rank < args.num_gpus:
                 my_block = [None]
                 # multi_block = [None] * (args.num_gpus + 1)
                 multi_block = [None] * (all_proc + 1)
+                logging.info("准备接收multi_mfgs")
                 torch.distributed.scatter_object_list(my_mfgs, multi_mfgs, src=args.num_gpus)
-                # print('1接收到数据，开始处理')
+                logging.info("接受到了multi_mfgs")
                 if mailbox is not None:
+                    logging.info("准备接收multi_root")
                     torch.distributed.scatter_object_list(my_root, multi_root, src=args.num_gpus)
                     torch.distributed.scatter_object_list(my_ts, multi_ts, src=args.num_gpus)
                     torch.distributed.scatter_object_list(my_eid, multi_eid, src=args.num_gpus)
+                    logging.info("接受到了multi_root")
                     if memory_param['deliver_to'] == 'neighbors':
+                        logging.info("准备接收multi_block")
                         torch.distributed.scatter_object_list(my_block, multi_block, src=args.num_gpus)
-                # print('1准备返回时间')
+                        logging.info("接受到了multi_block")
                 stream = torch.cuda.Stream()
                 # 创建当前线程，用来读取新一轮的数据
-                # print("创建新线程")
                 curr_thread = DataPipelineThread(my_mfgs, my_root, my_ts, my_eid, my_block, stream)
                 curr_thread.start()
                 # 让之前线程优先执行，等待之前线程执行完毕
+                logging.info("等待之前线程执行完毕")
                 prev_thread.join()
                 # with torch.cuda.stream(prev_thread.get_stream()):
                 # 获取之前线程的读取结果mfgs
+                logging.info("从之前线程获取mfgs")
                 mfgs = prev_thread.get_mfgs()
-                # print("woc: ", mfgs)
-                # print("555mfgs为", mfgs)
                 # 进入训练模式开始训练
                 # time_train_tmp = time.time()
                 model.train()
-                # print(111)
                 optimizer.zero_grad()
-                # print(222)
-                # print("woc2: ", mfgs)
+                logging.info("拿mfgs进行训练")
                 pred_pos, pred_neg = model(mfgs)
-                # print(333)
                 loss = creterion(pred_pos, torch.ones_like(pred_pos))
                 loss += creterion(pred_neg, torch.zeros_like(pred_neg))
-                # print(444)
+                logging.info("训练完成，准备backward")
                 loss.backward()
+                logging.info("ok1")
                 optimizer.step()
-                # print(555)
+                logging.info("ok2")
                 # time_train = time.time() - time_train_tmp
                 # torch.distributed.gather_object(float(time_train), None, dst=args.num_gpus)
+                logging.info("-1-1-1-1-1")
                 with torch.no_grad():
+                    logging.info("00000")
                     tot_loss += float(loss)
+                logging.info("11111")
                 # 训练完之后更新一下mailbox和memory
-                # print(666)
                 if mailbox is not None:
                     with torch.no_grad():
+                        logging.info("22222")
                         eid = prev_thread.get_eid()
+                        logging.info("准备pull远程mem_edge_feats")
                         mem_edge_feats = pull_remote(eid, 'edge', get_rank()) if edge_feats_not_None else None
                         # mem_edge_feats = edge_feats[eid] if edge_feats is not None else None
                         root_nodes = prev_thread.get_root()
                         ts = prev_thread.get_ts()
                         block = prev_thread.get_block()
+                        logging.info("准备update_mailbox")
                         mailbox.update_mailbox(model.module.memory_updater.last_updated_nid,
                                                model.module.memory_updater.last_updated_memory, root_nodes, ts,
                                                mem_edge_feats, block)
@@ -354,17 +374,13 @@ if args.local_rank < args.num_gpus:
                                               model.module.memory_updater.last_updated_memory,
                                               root_nodes,
                                               model.module.memory_updater.last_updated_ts)
-                        # print(888)
                         if memory_param['deliver_to'] == 'neighbors':
-                            # print(999)
                             torch.distributed.barrier(group=nccl_group)
-                            # print(101010)
                             if args.local_rank == 0:
-                                # print(111111)
                                 mailbox.update_next_mail_pos()
-                                # print(121212)
-                # print(999)
+
                 prev_thread = curr_thread
+                logging.info("当前训练完成")
             else:
                 my_mfgs = [None]
                 # multi_mfgs = [None] * (args.num_gpus + 1)
@@ -382,24 +398,21 @@ if args.local_rank < args.num_gpus:
                 # multi_block = [None] * (args.num_gpus + 1)
                 multi_block = [None] * (all_proc + 1)
                 # 获取mfgs
+                logging.info("准备接收multi_mfgs")
                 torch.distributed.scatter_object_list(my_mfgs, multi_mfgs, src=args.num_gpus)
-                # print('111接收到数据，开始处理', my_mfgs)
+                logging.info("接收到了multi_mfgs")
                 if mailbox is not None:
+                    logging.info("准备接收multi_root")
                     torch.distributed.scatter_object_list(my_root, multi_root, src=args.num_gpus)
                     torch.distributed.scatter_object_list(my_ts, multi_ts, src=args.num_gpus)
                     torch.distributed.scatter_object_list(my_eid, multi_eid, src=args.num_gpus)
+                    logging.info("接收到了multi_root")
                     if memory_param['deliver_to'] == 'neighbors':
+                        logging.info("准备接收multi_block")
                         torch.distributed.scatter_object_list(my_block, multi_block, src=args.num_gpus)
-                # print('2准备返回时间')
+                        logging.info("接收到了multi_block")
                 stream = torch.cuda.Stream()
                 # 创建之前线程
-                # print("创建之前线程")
-                # print("666: ", my_mfgs)
-                # print("666: ", my_root)
-                # print("666: ", my_ts)
-                # print("666: ", my_eid)
-                # print("666: ", my_block)
-                # print("666: ", stream)
                 prev_thread = DataPipelineThread(my_mfgs, my_root, my_ts, my_eid, my_block, stream)
                 prev_thread.start()
         # 如果状态为1，则进行交叉验证
@@ -443,8 +456,8 @@ if args.local_rank < args.num_gpus:
             multi_mfgs = [None] * (all_proc + 1)
             torch.distributed.scatter_object_list(my_mfgs, multi_mfgs, src=args.num_gpus)
             mfgs = mfgs_to_cuda(my_mfgs[0])
-            logging.info(f"node_feats_not_None: {node_feats_not_None}")
-            logging.info(f"edge_feats_not_None: {edge_feats_not_None}")
+            # logging.info(f"node_feats_not_None: {node_feats_not_None}")
+            # logging.info(f"edge_feats_not_None: {edge_feats_not_None}")
             prepare_input(mfgs, node_feats_not_None, edge_feats_not_None, pinned=True, nfeat_buffs=pinned_nfeat_buffs,
                           efeat_buffs=pinned_efeat_buffs)
             model.eval()
@@ -676,19 +689,21 @@ else:
                 # if len(multi_mfgs) == args.num_gpus:
                 if len(multi_mfgs) == all_proc:
                     # 设置模型状态为0，让gpu进程开始训练
-                    # print("主进程设置模型状态为0，开始训练！")
                     # model_state = [0] * (args.num_gpus + 1)
                     model_state = [0] * (all_proc + 1)
                     my_model_state = [None]
+                    logging.info("准备发送model_state")
                     torch.distributed.scatter_object_list(my_model_state, model_state, src=args.num_gpus)
+                    logging.info("发送成功model_state")
                     # multi_mfgs.append(None)
                     multi_mfgs.insert(1, None)
                     my_mfgs = [None]
                     # 将mfgs分发给其他gpu进程
-                    # print("已经将mfgs分发给了其他gpu进程")
-                    # print(multi_mfgs[0])
                     geshu += 1
+                    logging.info("准备发送multi_mfgs")
                     torch.distributed.scatter_object_list(my_mfgs, multi_mfgs, src=args.num_gpus)
+                    logging.info("发送成功multi_mfgs")
+
                     if mailbox is not None:
                         # multi_root.append(None)
                         multi_root.insert(1, None)
@@ -699,15 +714,20 @@ else:
                         my_root = [None]
                         my_ts = [None]
                         my_eid = [None]
+                        logging.info("准备发送multi_root")
                         torch.distributed.scatter_object_list(my_root, multi_root, src=args.num_gpus)
                         torch.distributed.scatter_object_list(my_ts, multi_ts, src=args.num_gpus)
                         torch.distributed.scatter_object_list(my_eid, multi_eid, src=args.num_gpus)
+                        logging.info("发送成功multi_root")
+
                         if memory_param['deliver_to'] == 'neighbors':
                             # multi_block.append(None)
                             multi_block.insert(1, None)
                             my_block = [None]
+                            logging.info("准备发送multi_block")
                             torch.distributed.scatter_object_list(my_block, multi_block, src=args.num_gpus)
-                    # print(multi_mfgs[0])
+                            logging.info("发送成功multi_block")
+
                     multi_mfgs = list()
                     multi_root = list()
                     multi_ts = list()

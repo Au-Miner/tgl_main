@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 
 '''
-python gen_graph.py --data WIKI
+python gen_graph.py --data GDELT
 
 rsync -avz /home/qcsun/DATA/GDELT qcsun@node191:/home/qcsun/DATA/
 rsync -avz /home/qcsun/DATA/REDDIT qcsun@node191:/home/qcsun/DATA/
