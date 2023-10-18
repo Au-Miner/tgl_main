@@ -35,9 +35,14 @@ sudo systemctl restart fail2ban
 
 sudo firewall-cmd --zone=public --add-port=1000-65000/udp --permanent
 sudo firewall-cmd --zone=public --add-port=1000-65000/tcp --permanent
+sudo firewall-cmd --zone=public --add-port=11081/tcp --permanent
+sudo firewall-cmd --zone=public --add-port=34567/tcp --permanent
 sudo firewall-cmd --zone=public --remove-port=10000-65000/tcp --permanent
 sudo firewall-cmd --reload
 sudo firewall-cmd --permanent --list-port
+
+
+
 
     export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
         python -m torch.distributed.launch --nproc_per_node=2 --nnodes=3 --node_rank=0 --master_addr="10.214.151.191" \
@@ -671,6 +676,7 @@ else:
                         pos_root_end = root_nodes.shape[0] * 2 // 3
                         sampler.sample(root_nodes[:pos_root_end], ts[:pos_root_end])
                     else:
+                        print("准备采样", len(root_nodes), "条边")
                         sampler.sample(root_nodes, ts)
                     # 获取采样结果ret
                     ret = sampler.get_ret()

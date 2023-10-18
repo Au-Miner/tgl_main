@@ -38,7 +38,7 @@ ip_addr=$(hostname -I | awk '{print $1}')
 echo "抓取到的当前地址: $ip_addr"
 
 
-TARGET_IPS=("10.214.151.191" "10.214.151.192" "10.214.151.197" "10.214.151.198")
+TARGET_IPS=("10.214.151.191" "10.214.151.192" "10.214.151.190" "10.214.151.193")
 
 activate_and_run() {
     source $1/etc/profile.d/conda.sh
@@ -66,14 +66,14 @@ case "$ip_addr" in
         export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
         activate_and_run "/home/qcsun/anaconda3" "tgl" 1 1 $1 $2
         ;;
-    "10.214.151.197")
-        echo "ip为node197"
-        export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
+    "10.214.151.190")
+        echo "ip为node190"
+        export NCCL_SOCKET_IFNAME=em1
         activate_and_run "/home/qcsun/anaconda3" "tgl" 1 2 $1 $2
         ;;
     *)
-        echo "ip为node198"
-        export NCCL_SOCKET_IFNAME=em2,^em1,^br-6ca3f947e6e4
+        echo "ip为node193"
+        export NCCL_SOCKET_IFNAME=em1,^br-6dff8f057956
         activate_and_run "/home/qcsun/anaconda3" "tgl" 1 3 $1 $2
         ;;
 esac

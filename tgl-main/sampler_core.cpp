@@ -404,6 +404,7 @@ class ParallelSampler
                 }
                 else
                     use_ptr = false;
+                use_ptr = false;
                 if (i==0)
                     sample_layer(root_nodes, root_ts, num_neighbors[i], use_ptr, true);
                 else

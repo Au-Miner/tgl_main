@@ -8,6 +8,7 @@ import numpy as np
 from kvstore import *
 
 
+
 def load_feat(d, rand_de=0, rand_dn=0):
     node_feats = None
     if os.path.exists('/home/qcsun/DATA/{}/node_features.pt'.format(d)):
@@ -87,6 +88,8 @@ def mfgs_to_cuda(mfgs):
             mfg[i] = mfg[i].to('cuda:0')
     return mfgs
 
+
+
 def prepare_input(mfgs, node_feats_not_None, edge_feats_not_None, combine_first=False, pinned=False, nfeat_buffs=None, efeat_buffs=None, nids=None, eids=None):
     if node_feats_not_None:
         for b in mfgs[0]:
@@ -98,6 +101,7 @@ def prepare_input(mfgs, node_feats_not_None, edge_feats_not_None, combine_first=
             for b in mfg:
                 if b.num_src_nodes() > b.num_dst_nodes():
                     device = torch.device('cpu')
+                    print("sample到了", len(b.edata['ID'].cpu().long()))
                     srch = pull_remote(b.edata['ID'].long().to(device), 'edge', get_rank())
                     # srch = edge_feats[b.edata['ID'].long().to(device)]
                     srch = srch.type(torch.float32)
