@@ -16,26 +16,25 @@ rsync -avz /home/qcsun/DATA/WIKI qcsun@node191:/home/qcsun/DATA/
 
 parser=argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='dataset name')
-parser.add_argument('--add_reverse', default=False, action='store_true')
+parser.add_argument('--add_reverse', default=True, action='store_true')
 args=parser.parse_args()
 
-args.data = 'GDELT'
 
 df = pd.read_csv('/home/qcsun/DATA/{}/edges.csv'.format(args.data))
 num_nodes = max(int(df['src'].max()), int(df['dst'].max())) + 1
 print('num_nodes: ', num_nodes)
 
-int_train_indptr = np.zeros(num_nodes + 1, dtype=np.int)
+int_train_indptr = np.zeros(num_nodes + 1, dtype=np.int64)
 int_train_indices = [[] for _ in range(num_nodes)]
 int_train_ts = [[] for _ in range(num_nodes)]
 int_train_eid = [[] for _ in range(num_nodes)]
 
-int_full_indptr = np.zeros(num_nodes + 1, dtype=np.int)
+int_full_indptr = np.zeros(num_nodes + 1, dtype=np.int64)
 int_full_indices = [[] for _ in range(num_nodes)]
 int_full_ts = [[] for _ in range(num_nodes)]
 int_full_eid = [[] for _ in range(num_nodes)]
 
-ext_full_indptr = np.zeros(num_nodes + 1, dtype=np.int)
+ext_full_indptr = np.zeros(num_nodes + 1, dtype=np.int64)
 ext_full_indices = [[] for _ in range(num_nodes)]
 ext_full_ts = [[] for _ in range(num_nodes)]
 ext_full_eid = [[] for _ in range(num_nodes)]

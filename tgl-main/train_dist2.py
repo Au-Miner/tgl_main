@@ -526,6 +526,17 @@ else:
                                   sample_param['history'], float(sample_param['duration']))
     neg_link_sampler = NegLinkSampler(g['indptr'].shape[0] - 1)
 
+    # print("=============")
+    # sampler.sample([145],
+    #                [75667])
+    # ret = sampler.get_ret()
+    # print(ret[0].nodes())
+    # print(ret[1].nodes())
+    # print(ret[2].nodes())
+    # print(ret[3].nodes())
+    # print(ret[4].nodes())
+    # print(ret[5].nodes())
+    # time.sleep((1000))
 
     # 进行交叉验证和测试工作
     def eval(mode='val'):
@@ -676,7 +687,7 @@ else:
                         pos_root_end = root_nodes.shape[0] * 2 // 3
                         sampler.sample(root_nodes[:pos_root_end], ts[:pos_root_end])
                     else:
-                        print("准备采样", len(root_nodes), "条边")
+                        # print("准备采样", len(root_nodes), "条边")
                         sampler.sample(root_nodes, ts)
                     # 获取采样结果ret
                     ret = sampler.get_ret()
@@ -744,6 +755,8 @@ else:
             print('Total time:', time_tot)
             wql_total_time += time_tot
             print('Training time:', time_train)
+
+
             # 设置模型状态为5，开始收集损失值
             # model_state = [5] * (args.num_gpus + 1)
             model_state = [5] * (all_proc + 1)

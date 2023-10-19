@@ -53,6 +53,23 @@ class KVstore:
 
 global RANK
 global KVSTORE
+global ALL_KEYS
+ALL_KEYS = 0
+global PULL_KEYS
+PULL_KEYS = 0
+
+def acc_all_keys(x) -> int:
+    global ALL_KEYS
+    ALL_KEYS += x
+    # print("all keys woc: ", ALL_KEYS)
+    return ALL_KEYS
+
+def acc_pull_keys(x) -> int:
+    global PULL_KEYS
+    PULL_KEYS += x
+    # print("pull keys woc: ", PULL_KEYS)
+    return PULL_KEYS
+
 def set_rank(rank: int):
     global RANK
     RANK = rank
@@ -81,7 +98,10 @@ def pull_local(keys: torch.Tensor, mode: str) -> torch.Tensor:
 
 
 def pull_remote(keys, mode, rank) -> torch.Tensor:
+    acc_all_keys(len(keys))
+    # print("add wql ", len(keys))
     if rank == 0:
         return pull_local(keys, mode)
     else:
+        acc_pull_keys(len(keys))
         return rpc.rpc_sync("worker0", pull_local, args=(keys, mode))

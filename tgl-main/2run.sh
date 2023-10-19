@@ -68,4 +68,6 @@ case "$ip_addr" in
         ;;
 esac
 
-
+    export NCCL_SOCKET_IFNAME=em1,^br-2cd32c74f1f1
+    python -m torch.distributed.launch --nproc_per_node=2 --nnodes=1 --node_rank=0 --master_addr="10.214.151.191" \
+    --master_port=34567 train_dist2.py --data REDDIT --config config/TGN.yml --num_gpus=1

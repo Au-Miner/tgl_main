@@ -101,7 +101,7 @@ def prepare_input(mfgs, node_feats_not_None, edge_feats_not_None, combine_first=
             for b in mfg:
                 if b.num_src_nodes() > b.num_dst_nodes():
                     device = torch.device('cpu')
-                    print("sample到了", len(b.edata['ID'].cpu().long()))
+                    # print("sample到了", len(b.edata['ID'].cpu().long()))
                     srch = pull_remote(b.edata['ID'].long().to(device), 'edge', get_rank())
                     # srch = edge_feats[b.edata['ID'].long().to(device)]
                     srch = srch.type(torch.float32)
